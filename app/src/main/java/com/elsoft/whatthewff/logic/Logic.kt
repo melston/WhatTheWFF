@@ -90,6 +90,15 @@ enum class InferenceRule(val ruleName: String, val abbreviation: String) {
  * A sealed class is perfect here, as a justification can only be one of a few specific types.
  */
 sealed class Justification {
+    // A property for displaying the justification in the UI.
+    // A string representation for display in the UI.
+    fun displayText(): String {
+        return when (this) {
+            is Premise -> "Premise"
+            is Inference -> "${lineReferences.joinToString(separator = ",")}: ${rule.abbreviation}"
+        }
+    }
+
     // Represents a premise, which requires no further justification.
     object Premise : Justification()
 
@@ -99,13 +108,6 @@ sealed class Justification {
         val lineReferences: List<Int> // The line numbers this rule applies to
     ) : Justification()
 
-    // A string representation for display in the UI.
-    fun desc(): String {
-        return when (this) {
-            is Premise -> "Premise"
-            is Inference -> "${lineReferences.joinToString(separator = ",")}: ${rule.abbreviation}"
-        }
-    }
 }
 
 /**

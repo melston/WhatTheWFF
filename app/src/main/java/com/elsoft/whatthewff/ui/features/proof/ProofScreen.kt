@@ -3,15 +3,14 @@
 
 package com.elsoft.whatthewff.ui.features.proof
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,19 +33,32 @@ import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
  * @param line The ProofLine to display.
  */
 @Composable
-fun ProofLineView(line: ProofLine, scale: Float) {
+fun ProofLineView(line: ProofLine, scale: Float, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp * scale),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = "${line.lineNumber}.", modifier = Modifier.width(30.dp),
-             fontWeight = FontWeight.Bold, fontSize = 16.sp * scale)
-        Text(text = line.formula.stringValue, modifier = Modifier.weight(1f), fontSize = 16.sp * scale)
-        Text(text = line.justification.desc(), modifier = Modifier.width(100.dp),
-             fontSize = 12.sp * scale, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+        Text(text = "${line.lineNumber}.",
+             modifier = Modifier.width(30.dp),
+             fontWeight = FontWeight.Bold,
+            fontSize = 16.sp * scale
+        )
+        Text(text = line.formula.stringValue,
+             modifier = Modifier.weight(1f),
+             fontSize = 16.sp * scale)
+        Text(text = line.justification.displayText(),
+             modifier = Modifier.width(100.dp),
+             fontSize = 12.sp * scale,
+             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete line ${line.lineNumber}",
+                tint = MaterialTheme.colorScheme.error
+            )
+        }    }
 }
 
 /**
@@ -55,23 +67,53 @@ fun ProofLineView(line: ProofLine, scale: Float) {
  * @param onDismissRequest Called when the user wants to close the dialog.
  * @param onConfirm Called when the user confirms the new line, passing the justification.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddLineDialog(
     onDismissRequest: () -> Unit,
     onConfirm: (Justification) -> Unit
 ) {
     var selectedRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
-    var lineRefs by remember { mutableStateOf("") } // e.g., "1,2"
+    var lineRefs by remember { mutableStateOf("") }
+    var isDropdownExpanded by remember { mutableStateOf(false) }
+    val rules = InferenceRule.values()
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(shape = RoundedCornerShape(16.dp)) {
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Add Justification", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(24.dp))
 
-                // TODO: In the future, this could be a dropdown or a list of all rules.
-                Text("Rule: ${selectedRule.ruleName}", style = MaterialTheme.typography.bodyLarge)
-                Spacer(Modifier.height(8.dp))
+                // Rule selection dropdown
+                ExposedDropdownMenuBox(
+                    expanded = isDropdownExpanded,
+                    onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedRule.ruleName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Rule") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
+                        modifier = Modifier.menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = isDropdownExpanded,
+                        onDismissRequest = { isDropdownExpanded = false }
+                    ) {
+                        rules.forEach { rule ->
+                            DropdownMenuItem(
+                                text = { Text(rule.ruleName) },
+                                onClick = {
+                                    selectedRule = rule
+                                    isDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
 
                 OutlinedTextField(
                     value = lineRefs,
@@ -80,11 +122,8 @@ fun AddLineDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
                 Spacer(Modifier.height(24.dp))
-
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismissRequest) {
-                        Text("Cancel")
-                    }
+                    TextButton(onClick = onDismissRequest) { Text("Cancel") }
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = {
                         val refList = lineRefs.split(',').mapNotNull { it.trim().toIntOrNull() }
@@ -118,6 +157,7 @@ fun ProofScreen(modifier: Modifier = Modifier) {
     var proof by remember { mutableStateOf(initialProof) }
     var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
     var showAddLineDialog by remember { mutableStateOf(false) }
+    var feedbackMessage by remember { mutableStateOf("Add a line to complete the proof, then validate.") }
     val scale = remember { mutableStateOf(1f) }
 
     val zoomModifier = Modifier.pointerInput(Unit) {
@@ -158,7 +198,11 @@ fun ProofScreen(modifier: Modifier = Modifier) {
              elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
             LazyColumn(modifier = Modifier.padding(16.dp)) {
                 items(proof.lines) { line ->
-                    ProofLineView(line = line, scale = scale.value)
+                    ProofLineView(line = line, scale = scale.value) {
+                        // Deletion logic: remove this line and all subsequent lines.
+                        proof = Proof(proof.lines.take(line.lineNumber - 1))
+                        feedbackMessage = "Proof updated. Continue building."
+                    }
                 }
             }
         }
@@ -188,12 +232,24 @@ fun ProofScreen(modifier: Modifier = Modifier) {
                 Text("Clear Input")
             }
             Button(
-                onClick = { /* TODO: Add logic for validating the entire proof */ },
+                onClick = {
+                    val result = ProofValidator.validate(proof)
+                    feedbackMessage = result.errorMessage ?: "Proof is valid!"
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text("Validate Proof")
             }
         }
+
+        Spacer(Modifier.height(16.dp))
+
+        // --- FEEDBACK AREA ---
+        Text(
+            text = feedbackMessage,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (feedbackMessage == "Proof is valid!") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+        )
     }
 }
 
