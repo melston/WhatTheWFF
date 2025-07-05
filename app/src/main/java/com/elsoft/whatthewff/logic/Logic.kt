@@ -68,6 +68,9 @@ object AvailableTiles {
      * A complete list of all defined tiles. We'll use this to populate the UI.
      */
     val allTiles = listOf(p, q, r, s, not, and, or, implies, iff, leftParen, rightParen)
+    val variables = listOf(p, q, r, s)
+    val operators = listOf(not, and, or, implies, iff)
+    val grouping = listOf(leftParen, rightParen)
 }
 
 /**

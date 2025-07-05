@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -53,25 +54,64 @@ fun LogicTileView(tile: LogicTile, modifier: Modifier = Modifier, onClick: () ->
 }
 
 /**
+ * Displays a single row of tappable tiles
+ *
+ * @param tiles A list of LogicTile objects to display.
+ * @param onTileTapped A function that is called when a tile is tapped.
+ */
+@Composable
+fun TileRow(title: String,
+            tiles: List<LogicTile>,
+            onTileTapped: (LogicTile) -> Unit,
+            modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(text = title,
+             style = MaterialTheme.typography.bodySmall.copy(
+                 color = Color.Gray
+             ))
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .wrapContentWidth(Alignment.Start),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            items(tiles) { tile ->
+                LogicTileView(tile = tile) {
+                    onTileTapped(tile)
+                }
+            }
+        }
+    }
+}
+
+
+/**
  * Displays the palette of available tiles that the user can select.
  *
  * @param onTileTapped A function that is called when a tile is tapped.
  */
 @Composable
 fun SymbolPalette(onTileTapped: (LogicTile) -> Unit) {
+    data class TileSectionInfo(val title: String, val tiles: List<LogicTile>)
+
+    val tileSections = listOf(
+        TileSectionInfo("Variables", AvailableTiles.variables),
+        TileSectionInfo("Operators", AvailableTiles.operators),
+        TileSectionInfo("Grouping", AvailableTiles.grouping)
+    )
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text("Symbol Palette", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 8.dp))
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            items(AvailableTiles.allTiles) { tile ->
-                LogicTileView(tile = tile) {
-                    onTileTapped(tile)
-                }
+        Text("Symbol Palette",
+             style = MaterialTheme.typography.titleMedium,
+             modifier = Modifier.padding(horizontal = 8.dp))
+        LazyColumn {
+            items(tileSections) { section ->
+                TileRow(
+                    title = section.title,
+                    tiles = section.tiles,
+                    onTileTapped = onTileTapped
+                )
             }
         }
     }
