@@ -40,7 +40,7 @@ object RuleReplacer {
         if (node is FormulaNode.UnaryOpNode && node.operator.symbol == "¬" &&
             node.child is FormulaNode.BinaryOpNode &&
             node.child.operator.symbol == "∧") {
-                val innerAndNode = node.child as FormulaNode.BinaryOpNode
+                val innerAndNode = node.child
                 val p = innerAndNode.left
                 val q = innerAndNode.right
                 val notP = FormulaNode.UnaryOpNode(AvailableTiles.not, p)
@@ -61,7 +61,7 @@ object RuleReplacer {
         // Form 3: ¬(P ∨ Q)  ->  (¬P ∧ ¬Q)
         if (node is FormulaNode.UnaryOpNode && node.operator.symbol == "¬" &&
             node.child is FormulaNode.BinaryOpNode && node.child.operator.symbol == "∨") {
-                val innerOrNode = node.child as FormulaNode.BinaryOpNode
+                val innerOrNode = node.child
                 val p = innerOrNode.left
                 val q = innerOrNode.right
                 val notP = FormulaNode.UnaryOpNode(AvailableTiles.not, p)

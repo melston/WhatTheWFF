@@ -115,7 +115,7 @@ fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Un
                                 DropdownMenuItem(
                                     text = { Text(rule.ruleName) },
                                     onClick = {
-                                        selectedInferenceRule = rule;
+                                        selectedInferenceRule = rule
                                         isDropdownExpanded = false
                                     }
                                 )
@@ -125,7 +125,7 @@ fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Un
                                 DropdownMenuItem(
                                     text = { Text(rule.ruleName) },
                                     onClick = {
-                                        selectedReplacementRule = rule;
+                                        selectedReplacementRule = rule
                                         isDropdownExpanded = false
                                     }
                                 )
