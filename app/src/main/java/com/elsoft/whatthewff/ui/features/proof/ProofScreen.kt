@@ -72,7 +72,7 @@ fun ProofLineView(line: ProofLine, scale: Float, onDelete: () -> Unit) {
 fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Unit) {
     var selectedTab by remember { mutableStateOf(0) } // 0 for Inference, 1 for Replacement
     var selectedInferenceRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
-    var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.COMMUTATION) }
+    var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.DEMORGANS_THEOREM) }
     var lineRefs by remember { mutableStateOf("") }
     var isDropdownExpanded by remember { mutableStateOf(false) }
 

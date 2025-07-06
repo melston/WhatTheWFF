@@ -1,101 +1,99 @@
 // File: logic/WffParser.kt
-// This file contains the logic for parsing a flat list of LogicTiles (a Formula)
-// into a hierarchical FormulaNode syntax tree.
+// This file contains an advanced parser that understands operator precedence,
+// allowing for more natural formula construction (e.g., ¬p ∨ q).
 
 package com.elsoft.whatthewff.logic
 
 /**
- * A singleton object responsible for parsing formulas.
- * This effectively replaces the old WffValidator by checking for well-formedness
- * and producing a useful syntax tree at the same time.
+ * A stateful helper class for parsing. It keeps track of the current position
+ * in the list of tiles, which simplifies the recursive parsing logic.
+ */
+private class ParserState(val tiles: List<LogicTile>) {
+    var position = 0
+    fun hasMore(): Boolean = position < tiles.size
+    fun current(): LogicTile? = tiles.getOrNull(position)
+    fun advance() { position++ }
+}
+
+/**
+ * A singleton object responsible for parsing formulas into syntax trees.
+ * This version uses a recursive descent method that respects operator precedence.
  */
 object WffParser {
 
     /**
-     * Public entry point for parsing. Takes a Formula and returns a FormulaNode tree.
-     *
-     * @param formula The formula to parse.
-     * @return The root FormulaNode of the syntax tree if parsing is successful and
-     * consumes the entire formula, otherwise null.
+     * Public entry point for parsing.
+     * @return The root FormulaNode if parsing is successful, otherwise null.
      */
     fun parse(formula: Formula): FormulaNode? {
-        if (formula.tiles.isEmpty()) {
-            return null
-        }
-        // Start the recursive parsing from the beginning of the tile list.
-        val result = parseNode(formula.tiles, 0)
+        if (formula.tiles.isEmpty()) return null
+        val state = ParserState(formula.tiles)
+        val resultNode = parseBinaryExpression(state)
+        // A successful parse must consume all tiles.
+        return if (state.hasMore()) null else resultNode
+    }
 
-        // A successful parse must do two things:
-        // 1. Return a non-null node (result != null).
-        // 2. Consume all tiles in the formula (result.second == formula.tiles.size).
-        return if (result != null && result.second == formula.tiles.size) {
-            result.first // Return just the parsed node
+    /**
+     * Parses binary expressions (∧, ∨, →, ↔).
+     * This is the entry point for parsing expressions with the lowest precedence.
+     */
+    private fun parseBinaryExpression(state: ParserState, currentPrecedence: Int = 0): FormulaNode? {
+        var left = parseUnary(state) ?: return null
+
+        while (state.hasMore()) {
+            val operator = state.current()
+            if (operator?.type != SymbolType.BINARY_OPERATOR) break
+
+            // For now, all binary operators have the same precedence.
+            // This is where more complex precedence logic would go if needed.
+
+            state.advance() // Consume the operator
+            val right = parseUnary(state) ?: return null
+            left = FormulaNode.BinaryOpNode(operator, left, right)
+        }
+        return left
+    }
+
+    /**
+     * Parses unary expressions (¬).
+     * This has higher precedence than binary operators.
+     */
+    private fun parseUnary(state: ParserState): FormulaNode? {
+        val operator = state.current()
+        return if (operator?.type == SymbolType.UNARY_OPERATOR) {
+            state.advance() // Consume the '¬'
+            // Recursively call parseUnary to handle multiple negations like ¬¬p
+            val operand = parseUnary(state) ?: return null
+            FormulaNode.UnaryOpNode(operator, operand)
         } else {
-            null // The formula was not a single, valid WFF.
+            // If not a unary operator, parse the next highest precedence level.
+            parsePrimary(state)
         }
     }
 
     /**
-     * The core recursive parsing function. It attempts to parse a single FormulaNode
-     * starting at a given index.
-     *
-     * @param tiles The full list of tiles.
-     * @param startIndex The index to begin parsing from.
-     * @return A Pair containing the parsed FormulaNode and the index of the next tile
-     * *after* the parsed node. Returns null if parsing fails.
+     * Parses primary expressions: variables or parenthesized groups.
+     * This is the highest level of precedence.
      */
-    private fun parseNode(tiles: List<LogicTile>, startIndex: Int): Pair<FormulaNode, Int>? {
-        if (startIndex >= tiles.size) return null
+    private fun parsePrimary(state: ParserState): FormulaNode? {
+        val tile = state.current() ?: return null
 
-        val currentTile = tiles[startIndex]
-
-        // Rule 1: A single variable is a WFF.
-        if (currentTile.type == SymbolType.VARIABLE) {
-            val node = FormulaNode.VariableNode(currentTile)
-            return Pair(node, startIndex + 1) // Consume one tile.
-        }
-
-        // Rules 2 & 3: Parenthesized formulas must start with '('.
-        if (currentTile.type == SymbolType.LEFT_PAREN) {
-            val innerStartIndex = startIndex + 1
-            val firstInnerTile = tiles.getOrNull(innerStartIndex)
-
-            // Case 1: Check for a Unary Operation, e.g., (¬ WFF)
-            if (firstInnerTile?.type == SymbolType.UNARY_OPERATOR) {
-                val operator = firstInnerTile
-                // The part after the operator must be a valid WFF.
-                val innerWffResult = parseNode(tiles, innerStartIndex + 1) ?: return null
-                val innerNode = innerWffResult.first
-                val nextIndexAfterWff = innerWffResult.second
-
-                // Check for the closing parenthesis.
-                if (tiles.getOrNull(nextIndexAfterWff)?.type == SymbolType.RIGHT_PAREN) {
-                    val node = FormulaNode.UnaryOpNode(operator, innerNode)
-                    return Pair(node, nextIndexAfterWff + 1) // Consume the ')'
-                }
+        return when (tile.type) {
+            SymbolType.VARIABLE -> {
+                state.advance() // Consume variable
+                FormulaNode.VariableNode(tile)
             }
-
-            // Case 2: Check for a Binary Operation, e.g., (WFF op WFF)
-            // Start by parsing the left-hand side WFF.
-            val leftNodeResult = parseNode(tiles, innerStartIndex) ?: return null
-            val leftNode = leftNodeResult.first
-            val nextIndexAfterLeft = leftNodeResult.second
-
-            val operatorTile = tiles.getOrNull(nextIndexAfterLeft)
-            if (operatorTile?.type == SymbolType.BINARY_OPERATOR) {
-                // Now, parse the right-hand side.
-                val rightNodeResult = parseNode(tiles, nextIndexAfterLeft + 1) ?: return null
-                val rightNode = rightNodeResult.first
-                val nextIndexAfterRight = rightNodeResult.second
-
-                // Finally, check for the closing parenthesis.
-                if (tiles.getOrNull(nextIndexAfterRight)?.type == SymbolType.RIGHT_PAREN) {
-                    val node = FormulaNode.BinaryOpNode(operatorTile, leftNode, rightNode)
-                    return Pair(node, nextIndexAfterRight + 1) // Consume the ')'
+            SymbolType.LEFT_PAREN -> {
+                state.advance() // Consume '('
+                // The expression inside the parentheses is parsed starting from the lowest precedence.
+                val expression = parseBinaryExpression(state)
+                if (state.current()?.type != SymbolType.RIGHT_PAREN) {
+                    return null // Mismatched parentheses
                 }
+                state.advance() // Consume ')'
+                expression
             }
+            else -> null // Unexpected token
         }
-        // If it doesn't match any valid structure, fail the parse.
-        return null
     }
 }
