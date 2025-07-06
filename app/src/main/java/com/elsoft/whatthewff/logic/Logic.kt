@@ -92,17 +92,20 @@ enum class InferenceRule(val ruleName: String, val abbreviation: String) {
     ABSORPTION("Absorption", "Abs"),
     SIMPLIFICATION("Simplification", "Simp"),
     CONJUNCTION("Conjunction", "Conj"),
-    ADDITION("Addition", "Add"),
+    ADDITION("Addition", "Add")
+}
+
+enum class ReplacementRule(val ruleName: String, val abbreviation: String) {
     DEMORGANS_THEOREM("De Morgan's Theorem", "DM"),
     COMMUTATION("Commutation", "Comm"),
-    ASSOCIATION("Association", "Assoc"),
-    DISTRIBUTION("Distribution", "Dist"),
-    DOUBLE_NEGATION("Double Negation", "DN"),
-    TRANSPOSITON("Transposition", "Trans"),
-    MATERIAL_IMPLICATION("Material Implication", "MI"),
-    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
-    EXPORTATION("Exporation", "Exp"),
-    TAUTOLOGY("Tautology", "Tau")
+//    ASSOCIATION("Association", "Assoc"),
+//    DISTRIBUTION("Distribution", "Dist"),
+//    DOUBLE_NEGATION("Double Negation", "DN"),
+//    TRANSPOSITON("Transposition", "Trans"),
+//    MATERIAL_IMPLICATION("Material Implication", "MI"),
+//    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
+//    EXPORTATION("Exporation", "Exp"),
+//    TAUTOLOGY("Tautology", "Tau")
 }
 
 /**
@@ -114,8 +117,9 @@ sealed class Justification {
     // A string representation for display in the UI.
     fun displayText(): String {
         return when (this) {
-            is Premise -> "Premise"
-            is Inference -> "${lineReferences.joinToString(separator = ",")}: ${rule.abbreviation}"
+            is Premise     -> "Premise"
+            is Inference   -> "${lineReferences.joinToString(separator = ",")}: ${rule.abbreviation}"
+            is Replacement -> "${lineReference}: ${rule.abbreviation}"
         }
     }
 
@@ -128,6 +132,10 @@ sealed class Justification {
         val lineReferences: List<Int> // The line numbers this rule applies to
     ) : Justification()
 
+    data class Replacement(
+        val rule: ReplacementRule,
+        val lineReference: Int // The line numbers this rule applies to
+    ) : Justification()
 }
 
 /**

@@ -69,76 +69,64 @@ fun ProofLineView(line: ProofLine, scale: Float, onDelete: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddLineDialog(
-    onDismissRequest: () -> Unit,
-    onConfirm: (Justification) -> Unit
-) {
-    var selectedRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
+fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Unit) {
+    var selectedTab by remember { mutableStateOf(0) } // 0 for Inference, 1 for Replacement
+    var selectedInferenceRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
+    var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.COMMUTATION) }
     var lineRefs by remember { mutableStateOf("") }
     var isDropdownExpanded by remember { mutableStateOf(false) }
-    val rules = InferenceRule.values()
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(shape = RoundedCornerShape(16.dp)) {
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Add Justification", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(16.dp))
+
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Inference") })
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Replacement") })
+                }
                 Spacer(Modifier.height(24.dp))
 
-                // Rule selection dropdown
-                ExposedDropdownMenuBox(
-                    expanded = isDropdownExpanded,
-                    onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = selectedRule.ruleName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Rule") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
-                        modifier = Modifier.menuAnchor()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = isDropdownExpanded,
-                        onDismissRequest = { isDropdownExpanded = false }
-                    ) {
-                        rules.forEach { rule ->
-                            DropdownMenuItem(
-                                text = { Text(rule.ruleName) },
-                                onClick = {
-                                    selectedRule = rule
-                                    isDropdownExpanded = false
-                                }
-                            )
+                // Dropdown Menu
+                ExposedDropdownMenuBox(expanded = isDropdownExpanded, onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }) {
+                    val currentRuleName = if (selectedTab == 0) selectedInferenceRule.ruleName else selectedReplacementRule.ruleName
+                    OutlinedTextField(value = currentRuleName, onValueChange = {}, readOnly = true, label = { Text("Rule") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) }, modifier = Modifier.menuAnchor())
+                    ExposedDropdownMenu(expanded = isDropdownExpanded, onDismissRequest = { isDropdownExpanded = false }) {
+                        if (selectedTab == 0) {
+                            InferenceRule.values().forEach { rule ->
+                                DropdownMenuItem(text = { Text(rule.ruleName) }, onClick = { selectedInferenceRule = rule; isDropdownExpanded = false })
+                            }
+                        } else {
+                            ReplacementRule.values().forEach { rule ->
+                                DropdownMenuItem(text = { Text(rule.ruleName) }, onClick = { selectedReplacementRule = rule; isDropdownExpanded = false })
+                            }
                         }
                     }
                 }
-
                 Spacer(Modifier.height(16.dp))
 
-                OutlinedTextField(
-                    value = lineRefs,
-                    onValueChange = { lineRefs = it.filter { char -> char.isDigit() || char == ',' } },
-                    label = { Text("Reference Lines (e.g., 1,2)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
+                OutlinedTextField(value = lineRefs, onValueChange = { lineRefs = it.filter { char -> char.isDigit() || char == ',' } }, label = { Text(if (selectedTab == 0) "Reference Lines (e.g., 1,2)" else "Reference Line (e.g., 1)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 Spacer(Modifier.height(24.dp))
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismissRequest) { Text("Cancel") }
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = {
-                        val refList = lineRefs.split(',').mapNotNull { it.trim().toIntOrNull() }
-                        if (refList.isNotEmpty()) {
-                            onConfirm(Justification.Inference(selectedRule, refList))
+                        val justification = if (selectedTab == 0) {
+                            val refs = lineRefs.split(',').mapNotNull { it.trim().toIntOrNull() }
+                            if (refs.isNotEmpty()) Justification.Inference(selectedInferenceRule, refs) else null
+                        } else {
+                            val ref = lineRefs.trim().toIntOrNull()
+                            if (ref != null) Justification.Replacement(selectedReplacementRule, ref) else null
                         }
-                    }) {
-                        Text("Confirm")
-                    }
+                        justification?.let { onConfirm(it) }
+                    }) { Text("Confirm") }
                 }
             }
         }
     }
 }
-
 
 /**
  * The main screen for building and validating proofs.
@@ -148,13 +136,13 @@ fun AddLineDialog(
 @Composable
 fun ProofScreen(modifier: Modifier = Modifier) {
     // --- STATE MANAGEMENT ---
-    val initialProof = Proof(
-        lines = listOf(
-            ProofLine(1, Formula(listOf(AvailableTiles.leftParen, AvailableTiles.p, AvailableTiles.implies, AvailableTiles.q, AvailableTiles.rightParen)), Justification.Premise),
-            ProofLine(2, Formula(listOf(AvailableTiles.p)), Justification.Premise)
-        )
-    )
-    var proof by remember { mutableStateOf(initialProof) }
+//    val initialProof = Proof(
+//        lines = listOf(
+//            ProofLine(1, Formula(listOf(AvailableTiles.leftParen, AvailableTiles.p, AvailableTiles.implies, AvailableTiles.q, AvailableTiles.rightParen)), Justification.Premise),
+//            ProofLine(2, Formula(listOf(AvailableTiles.p)), Justification.Premise)
+//        )
+//    )
+    var proof by remember { mutableStateOf(Proof(lines = emptyList())) }
     var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
     var showAddLineDialog by remember { mutableStateOf(false) }
     var feedbackMessage by remember { mutableStateOf("Add a line to complete the proof, then validate.") }
@@ -239,6 +227,31 @@ fun ProofScreen(modifier: Modifier = Modifier) {
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text("Validate Proof")
+            }
+
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+            Button(
+                onClick = {
+                    val newProofLine = ProofLine(
+                        lineNumber = proof.lines.size + 1,
+                        formula = currentFormula,
+                        justification = Justification.Premise
+                    )
+                    proof = Proof(proof.lines + newProofLine)
+                    currentFormula = Formula(emptyList())
+                    feedbackMessage = "Proof updated. Continue building."
+                },
+                enabled = currentFormula.tiles.isNotEmpty()
+            ) {
+                Text("Add Premise")
+            }
+            Button(onClick = {
+                proof = Proof(emptyList())
+                currentFormula = Formula(emptyList())
+                feedbackMessage = "Proof cleared. Start over."
+            }) {
+                Text("Clear Proof")
             }
         }
 
