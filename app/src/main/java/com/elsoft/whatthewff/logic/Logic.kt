@@ -33,6 +33,10 @@ data class LogicTile(val symbol: String, val type: SymbolType)
  * It's essentially just an ordered list of the LogicTiles they've placed.
  * Our validation engine will take this object as input to determine if it's a WFF.
  *
+ * Because this is a data class then two <code>Formula</code>s may be compared for equality.
+ * This comparison results in a true if each of the tiles in the two <code>Formula</code>s are
+ * in the same order and have the same symbols and SymbolTypes.
+ *
  * @property tiles The ordered list of tiles making up the potential formula.
  */
 data class Formula(val tiles: List<LogicTile>) {
@@ -81,8 +85,24 @@ object AvailableTiles {
  */
 enum class InferenceRule(val ruleName: String, val abbreviation: String) {
     MODUS_PONENS("Modus Ponens", "MP"),
-    MODUS_TOLLENS("Modus Tollens", "MT")
-    // We can add more rules here later, like Disjunctive Syllogism, etc.
+    MODUS_TOLLENS("Modus Tollens", "MT"),
+    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
+    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
+    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
+    ABSORPTION("Absorption", "Abs"),
+    SIMPLIFICATION("Simplification", "Simp"),
+    CONJUNCTION("Conjunction", "Conj"),
+    ADDITION("Addition", "Add"),
+    DEMORGANS_THEOREM("De Morgan's Theorem", "DM"),
+    COMMUTATION("Commutation", "Comm"),
+    ASSOCIATION("Association", "Assoc"),
+    DISTRIBUTION("Distribution", "Dist"),
+    DOUBLE_NEGATION("Double Negation", "DN"),
+    TRANSPOSITON("Transposition", "Trans"),
+    MATERIAL_IMPLICATION("Material Implication", "MI"),
+    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
+    EXPORTATION("Exporation", "Exp"),
+    TAUTOLOGY("Tautology", "Tau")
 }
 
 /**
