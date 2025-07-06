@@ -89,17 +89,46 @@ fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Un
                 Spacer(Modifier.height(24.dp))
 
                 // Dropdown Menu
-                ExposedDropdownMenuBox(expanded = isDropdownExpanded, onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }) {
-                    val currentRuleName = if (selectedTab == 0) selectedInferenceRule.ruleName else selectedReplacementRule.ruleName
-                    OutlinedTextField(value = currentRuleName, onValueChange = {}, readOnly = true, label = { Text("Rule") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) }, modifier = Modifier.menuAnchor())
-                    ExposedDropdownMenu(expanded = isDropdownExpanded, onDismissRequest = { isDropdownExpanded = false }) {
+                ExposedDropdownMenuBox(expanded = isDropdownExpanded,
+                                       onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }) {
+                    val currentRuleName =
+                        if (selectedTab == 0) selectedInferenceRule.ruleName
+                        else selectedReplacementRule.ruleName
+
+                    OutlinedTextField(
+                        value = currentRuleName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Rule") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(type = MenuAnchorType.PrimaryNotEditable)
+                    )
+
+                    ExposedDropdownMenu(expanded = isDropdownExpanded,
+                                        onDismissRequest = { isDropdownExpanded = false }) {
                         if (selectedTab == 0) {
-                            InferenceRule.values().forEach { rule ->
-                                DropdownMenuItem(text = { Text(rule.ruleName) }, onClick = { selectedInferenceRule = rule; isDropdownExpanded = false })
+                            InferenceRule.entries.forEach { rule ->
+                                DropdownMenuItem(
+                                    text = { Text(rule.ruleName) },
+                                    onClick = {
+                                        selectedInferenceRule = rule;
+                                        isDropdownExpanded = false
+                                    }
+                                )
                             }
                         } else {
-                            ReplacementRule.values().forEach { rule ->
-                                DropdownMenuItem(text = { Text(rule.ruleName) }, onClick = { selectedReplacementRule = rule; isDropdownExpanded = false })
+                            ReplacementRule.entries.forEach { rule ->
+                                DropdownMenuItem(
+                                    text = { Text(rule.ruleName) },
+                                    onClick = {
+                                        selectedReplacementRule = rule;
+                                        isDropdownExpanded = false
+                                    }
+                                )
                             }
                         }
                     }

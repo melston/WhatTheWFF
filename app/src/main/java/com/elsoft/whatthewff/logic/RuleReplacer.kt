@@ -39,7 +39,7 @@ object RuleReplacer {
         // Form 1: ¬(P ∧ Q)  ->  (¬P ∨ ¬Q)
         if (node is FormulaNode.UnaryOpNode && node.operator.symbol == "¬" &&
             node.child is FormulaNode.BinaryOpNode &&
-            (node.child as FormulaNode.BinaryOpNode).operator.symbol == "∧") {
+            node.child.operator.symbol == "∧") {
                 val innerAndNode = node.child as FormulaNode.BinaryOpNode
                 val p = innerAndNode.left
                 val q = innerAndNode.right
@@ -50,17 +50,17 @@ object RuleReplacer {
 
         // Form 2: (¬P ∨ ¬Q)  ->  ¬(P ∧ Q)
         if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "∨" &&
-            node.left is FormulaNode.UnaryOpNode && (node.left as FormulaNode.UnaryOpNode).operator.symbol == "¬" &&
-            node.right is FormulaNode.UnaryOpNode && (node.right as FormulaNode.UnaryOpNode).operator.symbol == "¬") {
-                val p = (node.left as FormulaNode.UnaryOpNode).child
-                val q = (node.right as FormulaNode.UnaryOpNode).child
+            node.left is FormulaNode.UnaryOpNode && node.left.operator.symbol == "¬" &&
+            node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == "¬") {
+                val p = node.left.child
+                val q = node.right.child
                 val innerAndNode = FormulaNode.BinaryOpNode(AvailableTiles.and, p, q)
                 possibleNewTrees.add(FormulaNode.UnaryOpNode(AvailableTiles.not, innerAndNode))
         }
 
         // Form 3: ¬(P ∨ Q)  ->  (¬P ∧ ¬Q)
         if (node is FormulaNode.UnaryOpNode && node.operator.symbol == "¬" &&
-            node.child is FormulaNode.BinaryOpNode && (node.child as FormulaNode.BinaryOpNode).operator.symbol == "∨") {
+            node.child is FormulaNode.BinaryOpNode && node.child.operator.symbol == "∨") {
                 val innerOrNode = node.child as FormulaNode.BinaryOpNode
                 val p = innerOrNode.left
                 val q = innerOrNode.right
@@ -71,10 +71,10 @@ object RuleReplacer {
 
         // Form 4: (¬P ∧ ¬Q)  ->  ¬(P ∨ Q)
         if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "∧" &&
-            node.left is FormulaNode.UnaryOpNode && (node.left as FormulaNode.UnaryOpNode).operator.symbol == "¬" &&
-            node.right is FormulaNode.UnaryOpNode && (node.right as FormulaNode.UnaryOpNode).operator.symbol == "¬") {
-                val p = (node.left as FormulaNode.UnaryOpNode).child
-                val q = (node.right as FormulaNode.UnaryOpNode).child
+            node.left is FormulaNode.UnaryOpNode && node.left.operator.symbol == "¬" &&
+            node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == "¬") {
+                val p = node.left.child
+                val q = node.right.child
                 val innerOrNode = FormulaNode.BinaryOpNode(AvailableTiles.or, p, q)
                 possibleNewTrees.add(FormulaNode.UnaryOpNode(AvailableTiles.not, innerOrNode))
         }
