@@ -1,3 +1,21 @@
 <resources>
     <string name="app_name">What the WFF</string>
+    <string name="add_line_message">Add line</string>
+    <string name="proof_cleared_message">Proof cleared. Start over.</string>
+    <string name="proof_complete_message">Congratulations! The proof is complete!</string>
+    <string name="proof_incomplete_message">The proof is valid, but you haven\'t reached the goal yet.</string>
+    <string name="proof_updated_message">Proof updated. Continue building.</string>
+    <string name="proof_valid_message">The proof is valid!</string>
+    <string name="add_justification_label">Add Justification</string>
+    <string name="add_line_label">Add Line</string>
+    <string name="add_premise_label">Add Premise</string>
+    <string name="cancel_label">Cancel</string>
+    <string name="clear_proof_label">Clear Proof</string>
+    <string name="confirm_label">Confirm</string>
+    <string name="goal_label">Goal:</string>
+    <string name="inference_label">Inference</string>
+    <string name="reference_line_label">Reference Line (e.g., 1)</string>"
+    <string name="reference_lines_label">Reference Lines (e.g., 1,2)</string>"
+    <string name="replacement_label">Replacement</string>"
+    <string name="validate_proof_label">Validate Proof</string>
 </resources>
