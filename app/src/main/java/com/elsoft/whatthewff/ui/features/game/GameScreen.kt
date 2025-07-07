@@ -39,7 +39,7 @@ fun LogicTileView(tile: LogicTile, modifier: Modifier = Modifier, onClick: () ->
     Box(
         modifier = modifier
             .padding(4.dp)
-            .size(50.dp)
+            .size(30.dp)
             .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -64,23 +64,17 @@ fun TileRow(title: String,
             tiles: List<LogicTile>,
             onTileTapped: (LogicTile) -> Unit,
             modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(text = title,
-             style = MaterialTheme.typography.bodySmall.copy(
-                 color = Color.Gray
-             ))
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-                .wrapContentWidth(Alignment.Start),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            items(tiles) { tile ->
-                LogicTileView(tile = tile) {
-                    onTileTapped(tile)
-                }
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .wrapContentWidth(Alignment.Start),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp)
+    ) {
+        items(tiles) { tile ->
+            LogicTileView(tile = tile) {
+                onTileTapped(tile)
             }
         }
     }
@@ -143,7 +137,7 @@ fun ConstructionArea(formula: Formula) {
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 2.dp)
-                            .size(40.dp)
+                            .size(30.dp)
                             .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {

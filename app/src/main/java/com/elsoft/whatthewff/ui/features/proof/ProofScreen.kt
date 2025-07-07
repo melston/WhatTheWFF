@@ -3,6 +3,7 @@
 
 package com.elsoft.whatthewff.ui.features.proof
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,14 +40,13 @@ import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
 fun ProofLineView(line: ProofLine, scale: Float, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp * scale),
+            .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = "${line.lineNumber}.",
              modifier = Modifier.width(30.dp),
              fontWeight = FontWeight.Bold,
-            fontSize = 16.sp * scale
+             fontSize = 16.sp * scale
         )
         Text(text = line.formula.stringValue,
              modifier = Modifier.weight(1f),
@@ -52,13 +55,21 @@ fun ProofLineView(line: ProofLine, scale: Float, onDelete: () -> Unit) {
              modifier = Modifier.width(100.dp),
              fontSize = 12.sp * scale,
              color = MaterialTheme.colorScheme.onSurfaceVariant)
-        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+        // MODIFIED: Replaced IconButton with a clickable Box for precise size control.
+        Box(
+            modifier = Modifier
+                .size(32.dp) // A smaller, more reasonable touch target.
+                .clickable(onClick = onDelete),
+            contentAlignment = Alignment.Center
+        ) {
             Icon(
                 imageVector = Icons.Default.Delete,
                 contentDescription = "Delete line ${line.lineNumber}",
-                tint = MaterialTheme.colorScheme.error
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp) // The visible size of the icon itself.
             )
-        }    }
+        }
+    }
 }
 
 /**
@@ -162,16 +173,19 @@ fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Un
  *
  * @param modifier The modifier to be applied to the layout.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProofScreen(modifier: Modifier = Modifier) {
+fun ProofScreen(
+    problem: Problem,
+    onBackClicked: () -> Unit
+) {
+
     // --- STATE MANAGEMENT ---
-//    val initialProof = Proof(
-//        lines = listOf(
-//            ProofLine(1, Formula(listOf(AvailableTiles.leftParen, AvailableTiles.p, AvailableTiles.implies, AvailableTiles.q, AvailableTiles.rightParen)), Justification.Premise),
-//            ProofLine(2, Formula(listOf(AvailableTiles.p)), Justification.Premise)
-//        )
-//    )
-    var proof by remember { mutableStateOf(Proof(lines = emptyList())) }
+    // Initialize the proof with the problem's premises.
+    val initialLines = problem.premises.mapIndexed { index, formula ->
+        ProofLine(index + 1, formula, Justification.Premise)
+    }
+    var proof by remember { mutableStateOf(Proof(lines = initialLines)) }
     var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
     var showAddLineDialog by remember { mutableStateOf(false) }
     var feedbackMessage by remember { mutableStateOf("Add a line to complete the proof, then validate.") }
@@ -200,98 +214,129 @@ fun ProofScreen(modifier: Modifier = Modifier) {
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // --- PROOF DISPLAY AREA ---
-        Text("Proof:", style = MaterialTheme.typography.titleLarge)
-        Card(modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(vertical = 8.dp)
-                            .then(zoomModifier),
-             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-            LazyColumn(modifier = Modifier.padding(16.dp)) {
-                items(proof.lines) { line ->
-                    ProofLineView(line = line, scale = scale.value) {
-                        // Deletion logic: remove this line and all subsequent lines.
-                        proof = Proof(proof.lines.take(line.lineNumber - 1))
-                        feedbackMessage = "Proof updated. Continue building."
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(problem.name) },
+                navigationIcon = {
+                    IconButton(onClick = onBackClicked) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .padding(16.dp)
+        ) {
+            // --- GOAL DISPLAY ---
+            Text(
+                text = "Goal: ${problem.conclusion.stringValue}",
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            )
+
+            // --- Proof Display Area ---
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(vertical = 8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                LazyColumn(modifier = Modifier.padding(16.dp),
+                           verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    items(proof.lines) { line ->
+                        ProofLineView(line = line, scale = scale.value) {
+                            proof = Proof(proof.lines.take(line.lineNumber - 1))
+                            feedbackMessage = "Proof updated. Continue building."
+                        }
                     }
                 }
             }
-        }
 
-        // --- FORMULA CONSTRUCTION AREA ---
-        SymbolPalette {
-            tile -> currentFormula = Formula(currentFormula.tiles + tile)
-        }
-        ConstructionArea(formula = currentFormula)
-        Spacer(Modifier.height(16.dp))
+            // --- FORMULA CONSTRUCTION AREA ---
+            SymbolPalette {
+                    tile -> currentFormula = Formula(currentFormula.tiles + tile)
+            }
+            ConstructionArea(formula = currentFormula)
+            Spacer(Modifier.height(16.dp))
 
-        // --- ACTION BUTTONS ---
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-            Button(
-                onClick = {
-                    // Only show dialog if the user has constructed a formula.
-                    if (currentFormula.tiles.isNotEmpty()) {
-                        showAddLineDialog = true
-                    }
-                },
-                // Disable button if there's no formula to add
-                enabled = currentFormula.tiles.isNotEmpty()
-            ) {
-                Text("Add Line")
-            }
-            Button(onClick = { currentFormula = Formula(emptyList()) }) {
-                Text("Clear Input")
-            }
-            Button(
-                onClick = {
-                    val result = ProofValidator.validate(proof)
-                    feedbackMessage = result.errorMessage ?: "Proof is valid!"
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text("Validate Proof")
-            }
+            // --- ACTION BUTTONS ---
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                Button(
+                    onClick = {
+                        // Only show dialog if the user has constructed a formula.
+                        if (currentFormula.tiles.isNotEmpty()) {
+                            showAddLineDialog = true
+                        }
+                    },
+                    // Disable button if there's no formula to add
+                    enabled = currentFormula.tiles.isNotEmpty()
+                ) {
+                    Text("Add Line")
+                }
+                Button(onClick = { currentFormula = Formula(emptyList()) }) {
+                    Text("Clear Input")
+                }
+                Button(
+                    onClick = {
+                        val result = ProofValidator.validate(proof)
+                        if (!result.isValid) {
+                            feedbackMessage = result.errorMessage ?: "Proof is valid!"
+                        } else {
+                            // Check if the last line matches the conclusion
+                            if (proof.lines.lastOrNull()?.formula == problem.conclusion) {
+                                feedbackMessage = "Congratulations! Proof complete!"
+                            } else {
+                                feedbackMessage = "The proof is valid, but you haven't reached the goal yet."
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Validate Proof")
+                }
 
-        }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-            Button(
-                onClick = {
-                    val newProofLine = ProofLine(
-                        lineNumber = proof.lines.size + 1,
-                        formula = currentFormula,
-                        justification = Justification.Premise
-                    )
-                    proof = Proof(proof.lines + newProofLine)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                Button(
+                    onClick = {
+                        val newProofLine = ProofLine(
+                            lineNumber = proof.lines.size + 1,
+                            formula = currentFormula,
+                            justification = Justification.Premise
+                        )
+                        proof = Proof(proof.lines + newProofLine)
+                        currentFormula = Formula(emptyList())
+                        feedbackMessage = "Proof updated. Continue building."
+                    },
+                    enabled = currentFormula.tiles.isNotEmpty()
+                ) {
+                    Text("Add Premise")
+                }
+                Button(onClick = {
+                    proof = Proof(emptyList())
                     currentFormula = Formula(emptyList())
-                    feedbackMessage = "Proof updated. Continue building."
-                },
-                enabled = currentFormula.tiles.isNotEmpty()
-            ) {
-                Text("Add Premise")
+                    feedbackMessage = "Proof cleared. Start over."
+                }) {
+                    Text("Clear Proof")
+                }
             }
-            Button(onClick = {
-                proof = Proof(emptyList())
-                currentFormula = Formula(emptyList())
-                feedbackMessage = "Proof cleared. Start over."
-            }) {
-                Text("Clear Proof")
-            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // --- FEEDBACK AREA ---
+            Text(
+                text = feedbackMessage,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (feedbackMessage == "Proof is valid!") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // --- FEEDBACK AREA ---
-        Text(
-            text = feedbackMessage,
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (feedbackMessage == "Proof is valid!") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-        )
     }
 }
 
@@ -299,6 +344,7 @@ fun ProofScreen(modifier: Modifier = Modifier) {
 @Composable
 fun ProofScreenPreview() {
     WhatTheWFFTheme {
-        ProofScreen()
+        ProofScreen(problem = ProblemSets.chapter1_ModusPonens.get(0),
+                    onBackClicked = { /*TODO*/ } )
     }
 }
