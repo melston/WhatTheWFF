@@ -60,10 +60,8 @@ fun LogicTileView(tile: LogicTile, modifier: Modifier = Modifier, onClick: () ->
  * @param onTileTapped A function that is called when a tile is tapped.
  */
 @Composable
-fun TileRow(title: String,
-            tiles: List<LogicTile>,
-            onTileTapped: (LogicTile) -> Unit,
-            modifier: Modifier = Modifier) {
+fun TileRow(tiles: List<LogicTile>,
+            onTileTapped: (LogicTile) -> Unit) {
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -102,7 +100,6 @@ fun SymbolPalette(onTileTapped: (LogicTile) -> Unit) {
         LazyColumn {
             items(tileSections) { section ->
                 TileRow(
-                    title = section.title,
                     tiles = section.tiles,
                     onTileTapped = onTileTapped
                 )
