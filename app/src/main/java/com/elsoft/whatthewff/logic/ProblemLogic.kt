@@ -109,34 +109,34 @@ object ProblemGenerator {
     fun generate(difficulty: Int): Problem {
         // Use a shuffled list of variables to ensure a clean, non-cyclical chain.
         val varsToUse = variables.shuffled()
-        // Cap difficulty to prevent running out of variables.
-        val cappedDifficulty = difficulty.coerceAtMost(varsToUse.size)
+        // Cap difficulty to prevent running out of variables. Add 1 because a
+        // difficulty of 1 requires 2 variables (p->q, p).
+        val cappedDifficulty = difficulty.coerceAtMost(varsToUse.size - 1)
 
+        // The chain will be: v_n -> ... -> v_2 -> v_1
+        // The goal (final conclusion) is the last variable in the chain.
         val finalConclusion = Formula(listOf(varsToUse[0]))
-        var currentGoal = finalConclusion
         val premises = mutableListOf<Formula>()
 
         // Build the chain of implications backward.
-        for (i in 1..cappedDifficulty) {
-            val antecedent = Formula(listOf(varsToUse[i]))
-            val consequent = currentGoal
+        // For a difficulty of N, we need N implications.
+        for (i in 0 until cappedDifficulty) {
+            val antecedent = Formula(listOf(varsToUse[i + 1]))
+            val consequent = Formula(listOf(varsToUse[i]))
 
             // Build the implication premise: (antecedent → consequent)
-            val implicationTiles = mutableListOf<LogicTile>()
-            implicationTiles.add(AvailableTiles.leftParen)
+            val implicationTiles = mutableListOf<LogicTile>(AvailableTiles.leftParen)
             implicationTiles.addAll(antecedent.tiles)
             implicationTiles.add(AvailableTiles.implies)
             implicationTiles.addAll(consequent.tiles)
             implicationTiles.add(AvailableTiles.rightParen)
 
             premises.add(Formula(implicationTiles))
-
-            // The new goal is the antecedent of the implication we just created.
-            currentGoal = antecedent
         }
 
-        // The last "goal" becomes the starting premise that unlocks the whole chain.
-        premises.add(currentGoal)
+        // The starting premise is the first variable in the chain, which unlocks everything.
+        val startingPremise = Formula(listOf(varsToUse[cappedDifficulty]))
+        premises.add(startingPremise)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
