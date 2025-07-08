@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.elsoft.whatthewff.logic.ProblemGenerator
+import com.elsoft.whatthewff.ui.features.game.GameModeScreen
 import com.elsoft.whatthewff.ui.features.main.MainScreen
 import com.elsoft.whatthewff.ui.features.practice.PracticeSelectScreen
 import com.elsoft.whatthewff.ui.features.proof.ProofScreen
@@ -30,18 +31,20 @@ class MainActivity : ComponentActivity() {
                     when (val screen = currentScreen) {
                         is Screen.Main -> MainScreen(
                             onPracticeClicked = { currentScreen = Screen.PracticeSelect },
-                            onGameClicked = {
-                                val problem = ProblemGenerator.generate(2) // Easy difficulty
-                                currentScreen = Screen.Proof(problem)
-                            }
+                            onGameClicked = { currentScreen = Screen.GameModeSelect } // Change this line
                         )
                         is Screen.PracticeSelect -> PracticeSelectScreen(
                             onProblemSelected = { problem -> currentScreen = Screen.Proof(problem) },
                             onBackClicked = { currentScreen = Screen.Main }
                         )
+                        // Add this new case
+                        is Screen.GameModeSelect -> GameModeScreen(
+                            onProblemGenerated = { problem -> currentScreen = Screen.Proof(problem) },
+                            onBackClicked = { currentScreen = Screen.Main }
+                        )
                         is Screen.Proof -> ProofScreen(
                             problem = screen.problem,
-                            onBackClicked = { currentScreen = Screen.Main } // Go back to main menu
+                            onBackClicked = { currentScreen = Screen.Main }
                         )
                     }
                 }

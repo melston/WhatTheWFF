@@ -27,41 +27,69 @@ data class Problem(
  * experience or a "campaign" mode.
  */
 object ProblemSets {
-
-    // Helper to create formulas from strings, reducing boilerplate.
-    // NOTE: This is a simple helper and assumes valid input.
-    // In a real app, you might want more robust error handling here.
+    /**
+     * A simple DSL/parser function that converts a readable string into a Formula object.
+     * This allows for clear and concise problem definitions.
+     * Example: f("(p→q)")
+     */
     private fun f(formulaString: String): Formula {
+        // Create a quick lookup map for mapping characters to their LogicTile objects.
+        val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
+
+        // Map each character in the string to its corresponding tile.
+        // If a character isn't a valid symbol (like whitespace), it's ignored.
         val tiles = formulaString.mapNotNull { char ->
-            AvailableTiles.allTiles.find { it.symbol == char.toString() }
+            tileMap[char.toString()]
         }
         return Formula(tiles)
     }
 
+    // MODIFIED: All problems now use the highly readable string-based DSL.
     val chapter1_ModusPonens = listOf(
         Problem(
             id = "1-1",
             name = "Simple Modus Ponens",
-            premises = listOf(f("(p→q)"), f("p")),
+            premises = listOf(f("(p→q)"),
+                              f("p")),
             conclusion = f("q"),
-            difficulty = 1
-        ),
+            difficulty = 1),
         Problem(
             id = "1-2",
             name = "Modus Ponens with Negation",
-            premises = listOf(f("(¬r→s)"), f("¬r")),
+            premises =  listOf(f("(¬r→s)"),
+                               f("¬r")),
             conclusion = f("s"),
-            difficulty = 2
-        )
+            difficulty = 2)
     )
 
     val chapter2_ModusTollens = listOf(
         Problem(
             id = "2-1",
             name = "Simple Modus Tollens",
-            premises = listOf(f("(p→q)"), f("¬q")),
+            premises = listOf(f("(p→q)"),
+                              f("q")),
+            conclusion = f("p"),
+            difficulty = 1
+        ),
+        Problem(
+            id = "2-2",
+            name = "Modus Tollens with Negation",
+            premises = listOf(f("(p→q)"),
+                              f("¬q")),
             conclusion = f("¬p"),
-            difficulty = 2
+            difficulty = 2)
+    )
+
+    // Example of a more complex problem definition using the DSL.
+    val chapter3_MixedRules = listOf(
+        Problem(
+            id = "3-1",
+            name = "Multi-Step Proof",
+            premises = listOf(f("(p→q)"),
+                              f("(q→r)"),
+                              f("p")),
+            conclusion = f("r"),
+            difficulty = 3
         )
     )
 }
@@ -71,40 +99,51 @@ object ProblemSets {
  */
 object ProblemGenerator {
 
+    private val variables = AvailableTiles.variables
+
     /**
      * Generates a new problem of a given difficulty.
-     *
      * @param difficulty The desired difficulty, controlling the number of backward steps.
      * @return A new Problem object.
      */
     fun generate(difficulty: Int): Problem {
-        // Start with a simple conclusion.
-        var conclusion = Formula(listOf(AvailableTiles.q))
-        var premises = mutableListOf<Formula>()
+        // Use a shuffled list of variables to ensure a clean, non-cyclical chain.
+        val varsToUse = variables.shuffled()
+        // Cap difficulty to prevent running out of variables.
+        val cappedDifficulty = difficulty.coerceAtMost(varsToUse.size)
 
-        // Apply rules in reverse for each level of difficulty.
-        for (i in 1..difficulty) {
-            // For now, we'll just use Modus Ponens in reverse.
-            // This can be expanded with more rules.
-            val newPremise1 = Formula(listOf(AvailableTiles.p, AvailableTiles.implies, conclusion.tiles.first()))
-            val newPremise2 = Formula(listOf(AvailableTiles.p))
+        val finalConclusion = Formula(listOf(varsToUse[0]))
+        var currentGoal = finalConclusion
+        val premises = mutableListOf<Formula>()
 
-            premises.add(newPremise1)
-            conclusion = newPremise2 // The new goal is to prove the antecedent.
+        // Build the chain of implications backward.
+        for (i in 1..cappedDifficulty) {
+            val antecedent = Formula(listOf(varsToUse[i]))
+            val consequent = currentGoal
+
+            // Build the implication premise: (antecedent → consequent)
+            val implicationTiles = mutableListOf<LogicTile>()
+            implicationTiles.add(AvailableTiles.leftParen)
+            implicationTiles.addAll(antecedent.tiles)
+            implicationTiles.add(AvailableTiles.implies)
+            implicationTiles.addAll(consequent.tiles)
+            implicationTiles.add(AvailableTiles.rightParen)
+
+            premises.add(Formula(implicationTiles))
+
+            // The new goal is the antecedent of the implication we just created.
+            currentGoal = antecedent
         }
 
-        // The final step is to add the last conclusion as a premise
-        premises.add(conclusion)
-
-        // The final conclusion is the original 'q'
-        val finalConclusion = Formula(listOf(AvailableTiles.q))
+        // The last "goal" becomes the starting premise that unlocks the whole chain.
+        premises.add(currentGoal)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
-            name = "Generated Problem",
-            premises = premises.distinct(), // Ensure no duplicate premises
+            name = "Generated Problem (Lvl $cappedDifficulty)",
+            premises = premises.shuffled(), // Shuffle for variety
             conclusion = finalConclusion,
-            difficulty = difficulty
+            difficulty = cappedDifficulty
         )
     }
 }
