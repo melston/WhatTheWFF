@@ -3,6 +3,7 @@
 
 package com.elsoft.whatthewff.ui.features.proof
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -39,7 +41,13 @@ import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
  * @param line The ProofLine to display.
  */
 @Composable
-fun ProofLineView(line: ProofLine, currentScale: Float, onDelete: () -> Unit) {
+fun ProofLineView(
+    line: ProofLine,
+    isSelected: Boolean,
+    onLineClicked: () -> Unit,
+    currentScale: Float,
+    onDelete: () -> Unit
+) {
     // Define your base font sizes (these could come from MaterialTheme or be custom)
     val baseNumberFontSize: TextUnit = MaterialTheme.typography.bodyLarge.fontSize
     val baseFormulaFontSize: TextUnit = MaterialTheme.typography.bodyLarge.fontSize
@@ -48,6 +56,12 @@ fun ProofLineView(line: ProofLine, currentScale: Float, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onLineClicked)
+            .then(
+                if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                else Modifier
+            )
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -100,7 +114,11 @@ fun ProofLineView(line: ProofLine, currentScale: Float, onDelete: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Unit) {
+fun AddLineDialog(
+    preSelectedLines: Set<Int>,
+    onDismissRequest: () -> Unit,
+    onConfirm: (Justification) -> Unit
+) {
     var selectedTab by remember { mutableStateOf(0) } // 0 for Inference, 1 for Replacement
     var selectedInferenceRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
     var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.DEMORGANS_THEOREM) }
@@ -114,6 +132,13 @@ fun AddLineDialog(onDismissRequest: () -> Unit, onConfirm: (Justification) -> Un
     val referenceLineLabel = stringResource(id = R.string.reference_line_label)
     val referenceLinesLabel = stringResource(id = R.string.reference_lines_label)
     val replacementLabel = stringResource(id = R.string.replacement_label)
+
+    // Use LaunchedEffect to pre-fill the text field when the dialog opens with selections.
+    LaunchedEffect(preSelectedLines) {
+        if (preSelectedLines.isNotEmpty()) {
+            lineRefs = preSelectedLines.sorted().joinToString(separator = ",")
+        }
+    }
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(shape = RoundedCornerShape(16.dp)) {
@@ -231,9 +256,13 @@ fun ProofScreen(
 
     val addLineLabel = stringResource(id = R.string.add_line_label)
     val addPremiseLabel = stringResource(id = R.string.add_premise_label)
-    val validateProofLabel = stringResource(id = R.string.validate_proof_label)
     val clearProofLabel = stringResource(id = R.string.clear_proof_label)
+    val clearInputLabel = stringResource(id = R.string.clear_input_label)
     val goalLabel = stringResource(id = R.string.goal_label)
+    val validateProofLabel = stringResource(id = R.string.validate_proof_label)
+
+    var selectedLines by remember { mutableStateOf(emptySet<Int>()) }
+    var dialogPreSelectedLines by remember { mutableStateOf(emptySet<Int>()) }
 
     var proof by remember { mutableStateOf(Proof(lines = initialLines)) }
     var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
@@ -250,6 +279,7 @@ fun ProofScreen(
     // --- DIALOG HANDLER ---
     if (showAddLineDialog) {
         AddLineDialog(
+            preSelectedLines = dialogPreSelectedLines,
             onDismissRequest = { showAddLineDialog = false },
             onConfirm = { justification ->
                 val newProofLine = ProofLine(
@@ -259,6 +289,7 @@ fun ProofScreen(
                 )
                 proof = Proof(proof.lines + newProofLine)
                 currentFormula = Formula(emptyList()) // Clear input field
+                selectedLines = emptySet() // Clear selection after adding a line
                 showAddLineDialog = false // Close dialog
             }
         )
@@ -305,9 +336,18 @@ fun ProofScreen(
                     items(proof.lines) { line ->
                         ProofLineView(
                             line = line,
+                            isSelected = line.lineNumber in selectedLines,
+                            onLineClicked = {
+                                selectedLines = if (line.lineNumber in selectedLines) {
+                                    selectedLines - line.lineNumber
+                                } else {
+                                    selectedLines + line.lineNumber
+                                }
+                            },
                             currentScale = scale.value,
                             onDelete = {
                                 proof = Proof(proof.lines.take(line.lineNumber - 1))
+                                selectedLines = emptySet()
                                 feedbackMessage = proofUpdatedMessage
                             }
                         )
@@ -323,21 +363,25 @@ fun ProofScreen(
             Spacer(Modifier.height(16.dp))
 
             // --- ACTION BUTTONS ---
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            ) {
                 Button(
                     onClick = {
-                        // Only show dialog if the user has constructed a formula.
-                        if (currentFormula.tiles.isNotEmpty()) {
-                            showAddLineDialog = true
-                        }
+                        dialogPreSelectedLines = selectedLines
+                        showAddLineDialog = true
                     },
                     // Disable button if there's no formula to add
                     enabled = currentFormula.tiles.isNotEmpty()
                 ) {
                     Text(addLineLabel)
                 }
-                Button(onClick = { currentFormula = Formula(emptyList()) }) {
-                    Text("Clear Input")
+                Button(onClick = {
+                    currentFormula = Formula(emptyList())
+                    selectedLines = emptySet()
+                }) {
+                    Text(clearInputLabel)
                 }
                 Button(
                     onClick = {

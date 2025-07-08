@@ -10,6 +10,7 @@
     <string name="add_line_label">Add Line</string>
     <string name="add_premise_label">Add Premise</string>
     <string name="cancel_label">Cancel</string>
+    <string name="clear_input_label">Clear Input</string>
     <string name="clear_proof_label">Clear Proof</string>
     <string name="confirm_label">Confirm</string>
     <string name="goal_label">Goal:</string>
