@@ -4,6 +4,9 @@
 
 package com.elsoft.whatthewff.logic
 
+import android.os.Build
+import androidx.annotation.RequiresApi
+
 /**
  * Represents a single logic problem, containing the initial premises,
  * the goal conclusion, and some metadata.
@@ -32,7 +35,7 @@ object ProblemSets {
      * This allows for clear and concise problem definitions.
      * Example: f("(p→q)")
      */
-    private fun f(formulaString: String): Formula {
+    public fun f(formulaString: String): Formula {
         // Create a quick lookup map for mapping characters to their LogicTile objects.
         val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
 
@@ -100,48 +103,64 @@ object ProblemSets {
 object ProblemGenerator {
 
     private val variables = AvailableTiles.variables
+    private val strategies = listOf(
+        RuleGenerators.modusPonens,
+        RuleGenerators.modusTollens
+    )
 
     /**
      * Generates a new problem of a given difficulty.
+     *
+     * The main generate function is responsible for the structure of the proof.
+     * It decides the chain of variables first (e.g., the goal is r, which will be
+     * derived from q, which will be derived from p).
+     *
      * @param difficulty The desired difficulty, controlling the number of backward steps.
      * @return A new Problem object.
      */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun generate(difficulty: Int): Problem {
-        // Use a shuffled list of variables to ensure a clean, non-cyclical chain.
-        val varsToUse = variables.shuffled()
-        // Cap difficulty to prevent running out of variables. Add 1 because a
-        // difficulty of 1 requires 2 variables (p->q, p).
+        val varsToUse = variables.shuffled().toMutableList()
         val cappedDifficulty = difficulty.coerceAtMost(varsToUse.size - 1)
 
-        // The chain will be: v_n -> ... -> v_2 -> v_1
-        // The goal (final conclusion) is the last variable in the chain.
-        val finalConclusion = Formula(listOf(varsToUse[0]))
-        val premises = mutableListOf<Formula>()
-
-        // Build the chain of implications backward.
-        // For a difficulty of N, we need N implications.
-        for (i in 0 until cappedDifficulty) {
-            val antecedent = Formula(listOf(varsToUse[i + 1]))
-            val consequent = Formula(listOf(varsToUse[i]))
-
-            // Build the implication premise: (antecedent → consequent)
-            val implicationTiles = mutableListOf<LogicTile>(AvailableTiles.leftParen)
-            implicationTiles.addAll(antecedent.tiles)
-            implicationTiles.add(AvailableTiles.implies)
-            implicationTiles.addAll(consequent.tiles)
-            implicationTiles.add(AvailableTiles.rightParen)
-
-            premises.add(Formula(implicationTiles))
+        // Start with a goal that can be positive or negative.
+        var firstVar = varsToUse.removeFirst()
+        var currentGoal = if (Math.random() > 0.5) {
+            Formula(listOf(firstVar))
+        } else {
+            Formula(listOf(AvailableTiles.not, firstVar))
         }
 
-        // The starting premise is the first variable in the chain, which unlocks everything.
-        val startingPremise = Formula(listOf(varsToUse[cappedDifficulty]))
-        premises.add(startingPremise)
+        val finalConclusion = currentGoal
+        val premises = mutableListOf<Formula>()
+
+        for (i in 0 until cappedDifficulty) {
+            if (varsToUse.isEmpty()) break
+
+            // Find all strategies that can logically apply to the current goal.
+            val applicableStrategies = strategies.filter { it.canApply(currentGoal) }
+            val strategy = applicableStrategies.randomOrNull() ?: RuleGenerators.modusPonens
+
+            val step = strategy.generate(currentGoal, varsToUse)
+            if (step != null) {
+                premises.addAll(step.newPremises)
+                currentGoal = step.nextGoal
+                // Remove the variable(s) used by the step to prevent reuse.
+                val nextGoalVar = WffParser.parse(step.nextGoal)?.let {
+                    if (it is FormulaNode.VariableNode) it.tile else if (it is FormulaNode.UnaryOpNode && it.child is FormulaNode.VariableNode) it.child.tile else null
+                }
+                nextGoalVar?.let { varsToUse.remove(it) }
+            } else {
+                break
+            }
+        }
+
+        premises.add(currentGoal)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
             name = "Generated Problem (Lvl $cappedDifficulty)",
-            premises = premises.shuffled(), // Shuffle for variety
+            premises = premises.shuffled(),
             conclusion = finalConclusion,
             difficulty = cappedDifficulty
         )

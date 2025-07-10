@@ -56,6 +56,9 @@ object AvailableTiles {
     val q = LogicTile("q", SymbolType.VARIABLE)
     val r = LogicTile("r", SymbolType.VARIABLE)
     val s = LogicTile("s", SymbolType.VARIABLE)
+    val t = LogicTile("t", SymbolType.VARIABLE)
+    val u = LogicTile("u", SymbolType.VARIABLE)
+    val v = LogicTile("v", SymbolType.VARIABLE)
 
     // Operators
     val not = LogicTile("¬", SymbolType.UNARY_OPERATOR)
@@ -71,10 +74,10 @@ object AvailableTiles {
     /**
      * A complete list of all defined tiles. We'll use this to populate the UI.
      */
-    val allTiles = listOf(p, q, r, s, not, and, or, implies, iff, leftParen, rightParen)
-    val variables = listOf(p, q, r, s)
+    val variables = listOf(p, q, r, s, t, u, v)
     val operators = listOf(not, and, or, implies, iff)
     val grouping = listOf(leftParen, rightParen)
+    val allTiles = variables + operators + grouping
 }
 
 /**
