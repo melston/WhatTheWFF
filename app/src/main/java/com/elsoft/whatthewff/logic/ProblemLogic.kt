@@ -80,7 +80,8 @@ object ProblemSets {
             premises = listOf(f("(p→q)"),
                               f("¬q")),
             conclusion = f("¬p"),
-            difficulty = 2)
+            difficulty = 2
+        )
     )
 
     // Example of a more complex problem definition using the DSL.
@@ -105,7 +106,8 @@ object ProblemGenerator {
     private val variables = AvailableTiles.variables
     private val strategies = listOf(
         RuleGenerators.modusPonens,
-        RuleGenerators.modusTollens
+        RuleGenerators.modusTollens,
+        RuleGenerators.conjunction
     )
 
     /**
@@ -121,48 +123,62 @@ object ProblemGenerator {
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun generate(difficulty: Int): Problem {
         val varsToUse = variables.shuffled().toMutableList()
-        val cappedDifficulty = difficulty.coerceAtMost(varsToUse.size - 1)
+        var stepsRemaining = difficulty
 
-        // Start with a goal that can be positive or negative.
-        var firstVar = varsToUse.removeFirst()
-        var currentGoal = if (Math.random() > 0.5) {
-            Formula(listOf(firstVar))
-        } else {
-            Formula(listOf(AvailableTiles.not, firstVar))
+        // Phase 1: Build a complex goal first.
+        var finalConclusion = Formula(listOf(varsToUse.removeFirst()))
+        for (i in 0 until (difficulty / 2).coerceAtLeast(1)) {
+            val nextVar = varsToUse.removeFirstOrNull() ?: break
+            val op = listOf("∧", "∨", "→").random()
+            val newTiles = mutableListOf(AvailableTiles.leftParen)
+            newTiles.addAll(finalConclusion.tiles)
+            newTiles.add(AvailableTiles.allTiles.find { it.symbol == op }!!)
+            newTiles.add(nextVar)
+            newTiles.add(AvailableTiles.rightParen)
+            finalConclusion = Formula(newTiles)
         }
 
-        val finalConclusion = currentGoal
+        // Phase 2: Decompose the goal into premises.
+        val goalsToSolve = mutableListOf(finalConclusion)
         val premises = mutableListOf<Formula>()
 
-        for (i in 0 until cappedDifficulty) {
-            if (varsToUse.isEmpty()) break
+        while (goalsToSolve.isNotEmpty() && stepsRemaining > 0) {
+            val currentGoal = goalsToSolve.removeFirst()
 
-            // Find all strategies that can logically apply to the current goal.
             val applicableStrategies = strategies.filter { it.canApply(currentGoal) }
-            val strategy = applicableStrategies.randomOrNull() ?: RuleGenerators.modusPonens
+            val strategy = applicableStrategies.randomOrNull()
 
-            val step = strategy.generate(currentGoal, varsToUse)
-            if (step != null) {
-                premises.addAll(step.newPremises)
-                currentGoal = step.nextGoal
-                // Remove the variable(s) used by the step to prevent reuse.
-                val nextGoalVar = WffParser.parse(step.nextGoal)?.let {
-                    if (it is FormulaNode.VariableNode) it.tile else if (it is FormulaNode.UnaryOpNode && it.child is FormulaNode.VariableNode) it.child.tile else null
+            if (strategy != null) {
+                val step = strategy.generate(currentGoal, varsToUse)
+                if (step != null) {
+                    premises.addAll(step.newPremises)
+                    goalsToSolve.addAll(step.nextGoals)
+                    // Remove used variables to avoid conflicts
+                    step.nextGoals.forEach { goal ->
+                        WffParser.parse(goal)?.let { node ->
+                            if (node is FormulaNode.VariableNode) varsToUse.remove(node.tile)
+                        }
+                    }
+                    stepsRemaining--
+                } else {
+                    // Strategy failed, add goal as a premise.
+                    premises.add(currentGoal)
                 }
-                nextGoalVar?.let { varsToUse.remove(it) }
             } else {
-                break
+                // No strategy applies, add goal as a premise.
+                premises.add(currentGoal)
             }
         }
 
-        premises.add(currentGoal)
+        // Any remaining goals become premises.
+        premises.addAll(goalsToSolve)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
-            name = "Generated Problem (Lvl $cappedDifficulty)",
+            name = "Generated Problem (Lvl $difficulty)",
             premises = premises.shuffled(),
             conclusion = finalConclusion,
-            difficulty = cappedDifficulty
+            difficulty = difficulty
         )
     }
 }

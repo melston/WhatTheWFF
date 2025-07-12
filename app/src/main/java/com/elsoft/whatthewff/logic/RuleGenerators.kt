@@ -2,7 +2,7 @@ package com.elsoft.whatthewff.logic
 
 
 // Represents the output of one backward step of generation.
-data class GenerationStep(val newPremises: List<Formula>, val nextGoal: Formula)
+data class GenerationStep(val newPremises: List<Formula>, val nextGoals: List<Formula>)
 
 // A data class to bundle a generation strategy with its applicability check.
 data class GenerationStrategy(
@@ -15,8 +15,7 @@ object RuleGenerators {
 
     val modusPonens = GenerationStrategy(
         canApply = { goal ->
-            // MP can apply to any goal.
-            true
+            true  // MP can apply to any goal.
         },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
@@ -24,7 +23,24 @@ object RuleGenerators {
             val premise = Formula(
                 listOf(AvailableTiles.leftParen) + source.tiles + listOf(AvailableTiles.implies) + goal.tiles + listOf(AvailableTiles.rightParen)
             )
-            GenerationStep(newPremises = listOf(premise), nextGoal = source)
+            GenerationStep(newPremises = listOf(premise), nextGoals = listOf(source))
+        }
+    )
+
+    val conjunction = GenerationStrategy(
+        canApply = { goal ->
+            // Can only apply if the goal is a conjunction.
+            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "∧" } ?: false
+        },
+        generate = { goal, _ ->
+            WffParser.parse(goal)?.let { node ->
+                if (node is FormulaNode.BinaryOpNode) {
+                    // To get (P ∧ Q), the new sub-goals are P and Q.
+                    val pFormula = treeToFormula(node.left)
+                    val qFormula = treeToFormula(node.right)
+                    GenerationStep(newPremises = emptyList(), nextGoals = listOf(pFormula, qFormula))
+                } else null
+            }
         }
     )
 
@@ -49,7 +65,7 @@ object RuleGenerators {
             // The new goal is always ¬Q.
             val nextGoal = Formula(listOf(AvailableTiles.not) + qFormula.tiles)
 
-            GenerationStep(newPremises = listOf(premise), nextGoal = nextGoal)
+            GenerationStep(newPremises = listOf(premise), nextGoals = listOf(nextGoal))
         }
     )
 

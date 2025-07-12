@@ -62,6 +62,14 @@ fun PracticeSelectScreen(
                     onProblemSelected = onProblemSelected
                 )
             }
+            // Chapter 3
+            item {
+                ChapterCard(
+                    title = "Chapter 3: Mixed Rules",
+                    problems = ProblemSets.chapter3_MixedRules,
+                    onProblemSelected = onProblemSelected
+                )
+            }
         }
     }
 }

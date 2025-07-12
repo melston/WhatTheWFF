@@ -95,7 +95,7 @@ enum class InferenceRule(val ruleName: String, val abbreviation: String) {
 //    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
 //    ABSORPTION("Absorption", "Abs"),
 //    SIMPLIFICATION("Simplification", "Simp"),
-//    CONJUNCTION("Conjunction", "Conj"),
+    CONJUNCTION("Conjunction", "Conj"),
 //    ADDITION("Addition", "Add")
 }
 

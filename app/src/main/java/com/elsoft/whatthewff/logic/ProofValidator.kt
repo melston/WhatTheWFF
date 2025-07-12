@@ -85,7 +85,7 @@ object ProofValidator {
 //            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refTrees, currentLineNumber)
 //            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refTrees, currentLineNumber)
 //            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refTrees, currentLineNumber)
 //            InferenceRule.ADDITION -> validateAddition(conclusionTree, refTrees, currentLineNumber)
         }
     }
