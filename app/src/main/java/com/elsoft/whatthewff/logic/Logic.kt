@@ -77,6 +77,7 @@ object AvailableTiles {
     val variables = listOf(p, q, r, s, t, u, v)
     val operators = listOf(not, and, or, implies, iff)
     val grouping = listOf(leftParen, rightParen)
+    val connectors = operators + grouping
     val allTiles = variables + operators + grouping
 }
 
@@ -89,13 +90,13 @@ object AvailableTiles {
 enum class InferenceRule(val ruleName: String, val abbreviation: String) {
     MODUS_PONENS("Modus Ponens", "MP"),
     MODUS_TOLLENS("Modus Tollens", "MT"),
-    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
-    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
-    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
-    ABSORPTION("Absorption", "Abs"),
-    SIMPLIFICATION("Simplification", "Simp"),
-    CONJUNCTION("Conjunction", "Conj"),
-    ADDITION("Addition", "Add")
+//    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
+//    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
+//    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
+//    ABSORPTION("Absorption", "Abs"),
+//    SIMPLIFICATION("Simplification", "Simp"),
+//    CONJUNCTION("Conjunction", "Conj"),
+//    ADDITION("Addition", "Add")
 }
 
 enum class ReplacementRule(val ruleName: String, val abbreviation: String) {
@@ -121,13 +122,18 @@ sealed class Justification {
     fun displayText(): String {
         return when (this) {
             is Premise     -> "Premise"
+            is Assumption -> "Assumption"
             is Inference   -> "${lineReferences.joinToString(separator = ",")}: ${rule.abbreviation}"
             is Replacement -> "${lineReference}: ${rule.abbreviation}"
+            is ImplicationIntroduction -> "II ${subproofStart}-${subproofEnd}"
         }
     }
 
     // Represents a premise, which requires no further justification.
     object Premise : Justification()
+
+    // A justification for a temporary assumption that starts a sub-proof.
+    object Assumption : Justification()
 
     // Represents a line derived from other lines using a rule of inference.
     data class Inference(
@@ -139,6 +145,9 @@ sealed class Justification {
         val rule: ReplacementRule,
         val lineReference: Int // The line numbers this rule applies to
     ) : Justification()
+
+    // A justification for concluding an implication after a sub-proof is complete.
+    data class ImplicationIntroduction(val subproofStart: Int, val subproofEnd: Int) : Justification()
 }
 
 /**
@@ -151,7 +160,8 @@ sealed class Justification {
 data class ProofLine(
     val lineNumber: Int,
     val formula: Formula,
-    val justification: Justification
+    val justification: Justification,
+    val depth: Int = 0 // Property to handle indentation and scope
 )
 
 /**

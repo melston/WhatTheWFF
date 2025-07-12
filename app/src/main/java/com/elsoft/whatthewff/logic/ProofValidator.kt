@@ -36,7 +36,9 @@ object ProofValidator {
             // 2. Validate the justification for the line.
             val justificationResult = when (line.justification) {
                 is Justification.Premise -> ValidationResult(true) // Premises are assumed valid.
+                is Justification.Assumption -> ValidationResult(true) // Assumptions are assumed valid.
                 is Justification.Inference -> validateInference(currentTree, line.justification, provenTrees, line.lineNumber)
+                is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, line.justification, proof, line.lineNumber)
                 is Justification.Replacement -> validateReplacement(currentTree, line.justification, provenTrees, line.lineNumber)
             }
 
@@ -78,13 +80,13 @@ object ProofValidator {
         return when (justification.rule) {
             InferenceRule.MODUS_PONENS -> validateModusPonens(conclusionTree, refTrees, currentLineNumber)
             InferenceRule.MODUS_TOLLENS -> validateModusTollens(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.ADDITION -> validateAddition(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refTrees, currentLineNumber)
+//            InferenceRule.ADDITION -> validateAddition(conclusionTree, refTrees, currentLineNumber)
         }
     }
 
@@ -111,6 +113,44 @@ object ProofValidator {
         } else {
             ValidationResult(false, "Line ${currentLineNumber} does not follow from line ${justification.lineReference} by ${justification.rule.ruleName}.")
         }
+    }
+
+    private fun validateImplicationIntroduction(
+        conclusionTree: FormulaNode,
+        justification: Justification.ImplicationIntroduction,
+        fullProof: Proof, // We need the full proof to check the sub-proof lines
+        currentLineNumber: Int
+    ): ValidationResult {
+
+        // 1. Check that the conclusion is actually an implication (P → Q)
+        if (conclusionTree !is FormulaNode.BinaryOpNode || conclusionTree.operator.symbol != "→") {
+            return ValidationResult(false, "Line $currentLineNumber: Implication Introduction must result in an implication.")
+        }
+
+        // 2. Get the assumption and the final line from the sub-proof
+        val assumptionLine = fullProof.lines.getOrNull(justification.subproofStart - 1)
+        val subproofConclusionLine = fullProof.lines.getOrNull(justification.subproofEnd - 1)
+
+        if (assumptionLine == null || subproofConclusionLine == null) {
+            return ValidationResult(false, "Line $currentLineNumber: Sub-proof lines ${justification.subproofStart}-${justification.subproofEnd} are invalid.")
+        }
+
+        // 3. Check if the assumption matches the antecedent (P) of the conclusion
+        val assumptionTree = WffParser.parse(assumptionLine.formula)
+        if (assumptionTree != conclusionTree.left) {
+            return ValidationResult(false, "Line $currentLineNumber: The antecedent does not match the assumption on line ${justification.subproofStart}.")
+        }
+
+        // 4. Check if the sub-proof's result matches the consequent (Q) of the conclusion
+        val subproofConclusionTree = WffParser.parse(subproofConclusionLine.formula)
+        if (subproofConclusionTree != conclusionTree.right) {
+            return ValidationResult(false, "Line $currentLineNumber: The consequent does not match the conclusion of the sub-proof on line ${justification.subproofEnd}.")
+        }
+
+        // (A more advanced validator would also re-validate the lines inside the sub-proof here,
+        // ensuring they respect scoping rules, but for now, this checks the main structure.)
+
+        return ValidationResult(true)
     }
 
     /**

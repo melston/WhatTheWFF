@@ -12,11 +12,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -90,8 +91,7 @@ fun SymbolPalette(onTileTapped: (LogicTile) -> Unit) {
 
     val tileSections = listOf(
         TileSectionInfo("Variables", AvailableTiles.variables),
-        TileSectionInfo("Operators", AvailableTiles.operators),
-        TileSectionInfo("Grouping", AvailableTiles.grouping)
+        TileSectionInfo("Connectors", AvailableTiles.connectors)
     )
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text("Symbol Palette",
@@ -114,33 +114,64 @@ fun SymbolPalette(onTileTapped: (LogicTile) -> Unit) {
  * @param formula The current formula being constructed.
  */
 @Composable
-fun ConstructionArea(formula: Formula) {
+fun ConstructionArea(
+    formula: Formula,
+    onDeleteLast: () -> Unit
+) {
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text("Construction Area", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 8.dp))
+        Text("Construction Area",
+             style = MaterialTheme.typography.titleMedium,
+             modifier = Modifier.padding(horizontal = 8.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(80.dp)
                 .padding(8.dp)
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                .border(1.dp,
+                        MaterialTheme.colorScheme.outline,
+                        RoundedCornerShape(8.dp))
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (formula.tiles.isEmpty()) {
-                Text("Tap a symbol to begin...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                formula.tiles.forEach { tile ->
-                    // Use a non-clickable version for the construction area
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 2.dp)
-                            .size(30.dp)
-                            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = tile.symbol, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 16.sp)
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (formula.tiles.isEmpty()) {
+                    Text(
+                        "Tap a symbol to begin...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // TODO: Create string resource for this
+                } else {
+                    formula.tiles.forEach { tile ->
+                        // Use a non-clickable version for the construction area
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 2.dp)
+                                .size(40.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.secondaryContainer,
+                                    RoundedCornerShape(4.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = tile.symbol,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                fontSize = 16.sp
+                            )
+                        }
                     }
                 }
+            }
+            IconButton(
+                onClick = onDeleteLast,
+                enabled = formula.tiles.isNotEmpty(),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete last symbol")
+                // TODO: Create string resource for this
             }
         }
     }
@@ -170,7 +201,14 @@ fun GameScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        ConstructionArea(formula = currentFormula)
+        ConstructionArea(
+            formula = currentFormula,
+            onDeleteLast = {
+                if (currentFormula.tiles.isNotEmpty()) {
+                    currentFormula = Formula(currentFormula.tiles.dropLast(1))
+                }
+            }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 

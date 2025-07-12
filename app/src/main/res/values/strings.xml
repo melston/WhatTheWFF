@@ -7,7 +7,7 @@
     <string name="proof_updated_message">Proof updated. Continue building.</string>
     <string name="proof_valid_message">The proof is valid!</string>
     <string name="add_justification_label">Add Justification</string>
-    <string name="add_line_label">Add Line</string>
+    <string name="add_line_label">Add Derived Line</string>
     <string name="add_premise_label">Add Premise</string>
     <string name="cancel_label">Cancel</string>
     <string name="clear_input_label">Clear Input</string>
