@@ -14,12 +14,21 @@ data class GenerationStrategy(
 object RuleGenerators {
 
     val modusPonens = GenerationStrategy(
-        canApply = { true }, // Can always apply as a fallback
+        // Corrected canApply logic to match test expectations for current generator
+        // It should not apply if a more specific rule like HS could apply.
+        canApply = { goal ->
+            WffParser.parse(goal)?.let { it !is FormulaNode.BinaryOpNode || it.operator.symbol != "→" } ?: true
+        },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
             val source = Formula(listOf(availableVars.removeAt(0)))
             val premise = Formula(
-                listOf(AvailableTiles.leftParen) + source.tiles + listOf(AvailableTiles.implies) + goal.tiles + listOf(AvailableTiles.rightParen)
+                listOf(
+                    AvailableTiles.leftParen) +
+                    source.tiles +
+                    listOf(AvailableTiles.implies) +
+                    goal.tiles +
+                    listOf(AvailableTiles.rightParen)
             )
             GenerationStep(newPremises = listOf(premise), nextGoals = listOf(source))
         }
@@ -28,7 +37,7 @@ object RuleGenerators {
     val modusTollens = GenerationStrategy(
         canApply = { goal ->
             // MT can only apply if the goal is a negation.
-            WffParser.parse(goal) is FormulaNode.UnaryOpNode
+            WffParser.parse(goal)?.let { it is FormulaNode.UnaryOpNode } ?: false
         },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
@@ -41,7 +50,11 @@ object RuleGenerators {
 
             // The premise is always (P → Q).
             val premise = Formula(
-                listOf(AvailableTiles.leftParen) + pFormula.tiles + listOf(AvailableTiles.implies) + qFormula.tiles + listOf(AvailableTiles.rightParen)
+                listOf(AvailableTiles.leftParen) +
+                        pFormula.tiles +
+                        listOf(AvailableTiles.implies) +
+                        qFormula.tiles +
+                        listOf(AvailableTiles.rightParen)
             )
             // The new goal is always ¬Q.
             val nextGoal = Formula(listOf(AvailableTiles.not) + qFormula.tiles)
@@ -58,10 +71,9 @@ object RuleGenerators {
         generate = { goal, _ ->
             WffParser.parse(goal)?.let { node ->
                 if (node is FormulaNode.BinaryOpNode) {
-                    // To get (P ∧ Q), the new sub-goals are P and Q.
-                    val pFormula = treeToFormula(node.left)
-                    val qFormula = treeToFormula(node.right)
-                    GenerationStep(newPremises = emptyList(), nextGoals = listOf(pFormula, qFormula))
+                    GenerationStep(newPremises = emptyList(),
+                                   nextGoals = listOf(treeToFormula(node.left),
+                                                      treeToFormula(node.right)))
                 } else null
             }
         }
@@ -70,13 +82,13 @@ object RuleGenerators {
     val hypotheticalSyllogism = GenerationStrategy(
         canApply = { goal ->
             // Can only apply if the goal is a conjunction.
-            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "⇒" } ?: false
+            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "→" } ?: false
         },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
             WffParser.parse(goal)?.let { node ->
                 // This is already checked in canApply, but just in case...
-                if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "⇒") {
+                if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "→") {
                     val p = treeToFormula(node.left)
                     val r = treeToFormula(node.right)
                     val q = Formula(listOf(availableVars.removeAt(0))) // Intermediate variable
@@ -90,7 +102,6 @@ object RuleGenerators {
                 } else null
             }
         }
-
     )
 
     val disjunctiveSyllogism = GenerationStrategy(
@@ -104,32 +115,52 @@ object RuleGenerators {
             val p = otherFormula
             val q = goal
 
-            val premise1 = Formula(listOf(AvailableTiles.leftParen) + p.tiles + listOf(AvailableTiles.or) + q.tiles + listOf(AvailableTiles.rightParen))
+            val premise1 =
+                Formula(
+                    listOf(AvailableTiles.leftParen) +
+                            p.tiles +
+                            listOf(AvailableTiles.or) +
+                            q.tiles +
+                            listOf(AvailableTiles.rightParen))
             val premise2 = Formula(listOf(AvailableTiles.not) + p.tiles)
 
             GenerationStep(newPremises = listOf(premise1), nextGoals = listOf(premise2))
         }
     )
-    private fun treeToFormula(node: FormulaNode, isToplevel: Boolean = true): Formula {
+
+    // This function is now more robust and correctly handles parentheses
+    // to match the expectations of the unit tests.
+    fun treeToFormula(node: FormulaNode): Formula {
         val tiles = mutableListOf<LogicTile>()
-        fun build(n: FormulaNode, isInner: Boolean) {
-            val needsParens = isInner && (n is FormulaNode.BinaryOpNode || n is FormulaNode.UnaryOpNode)
-            if (needsParens) tiles.add(AvailableTiles.leftParen)
+        fun recurse(n: FormulaNode) {
             when (n) {
-                is FormulaNode.VariableNode -> tiles.add(n.tile)
+                is FormulaNode.VariableNode -> {
+                    tiles.add(n.tile)
+                }
                 is FormulaNode.UnaryOpNode -> {
+                    tiles.add(AvailableTiles.leftParen)
                     tiles.add(n.operator)
-                    build(n.child, true)
+                    recurse(n.child)
+                    tiles.add(AvailableTiles.rightParen)
                 }
                 is FormulaNode.BinaryOpNode -> {
-                    build(n.left, true)
+                    tiles.add(AvailableTiles.leftParen)
+                    recurse(n.left)
                     tiles.add(n.operator)
-                    build(n.right, true)
+                    recurse(n.right)
+                    tiles.add(AvailableTiles.rightParen)
                 }
             }
-            if (needsParens) tiles.add(AvailableTiles.rightParen)
         }
-        build(node, !isToplevel)
+
+        // A special case to handle top-level negations like ¬p without adding extra parens
+        if (node is FormulaNode.UnaryOpNode) {
+            tiles.add(node.operator)
+            recurse(node.child)
+        } else {
+            recurse(node)
+        }
+
         return Formula(tiles)
     }
 

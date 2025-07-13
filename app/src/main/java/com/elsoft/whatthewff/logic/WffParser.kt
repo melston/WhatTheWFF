@@ -1,6 +1,6 @@
 // File: logic/WffParser.kt
-// This file contains a robust parser that correctly handles top-level binary
-// expressions and ensures consistent tree generation.
+// This file contains a robust, multi-level recursive descent parser that
+// correctly handles operator precedence and parenthesized expressions.
 
 package com.elsoft.whatthewff.logic
 
@@ -9,69 +9,87 @@ package com.elsoft.whatthewff.logic
  */
 object WffParser {
 
+    // A stateful helper class for the parser.
+    private class ParserState(val tiles: List<LogicTile>) {
+        var position = 0
+        fun hasMore(): Boolean = position < tiles.size
+        fun current(): LogicTile? = tiles.getOrNull(position)
+        fun advance() { position++ }
+    }
+
     /**
      * Public entry point for parsing.
      */
     fun parse(formula: Formula): FormulaNode? {
         if (formula.tiles.isEmpty()) return null
-        val result = parseExpression(formula.tiles)
+        val state = ParserState(formula.tiles)
+        val resultNode = parseImplication(state) // Start with the lowest precedence operator
         // A successful parse must consume all tiles.
-        return if (result != null && result.second == formula.tiles.size) {
-            result.first
-        } else {
-            null
-        }
+        return if (state.hasMore()) null else resultNode
     }
 
-    /**
-     * The main recursive parsing function.
-     * @return A Pair containing the parsed node and the index of the next token.
-     */
-    private fun parseExpression(tiles: List<LogicTile>, startIndex: Int = 0): Pair<FormulaNode, Int>? {
-        // An expression is a term, possibly followed by a binary operator and another term.
-        var (left, nextIndex) = parseTerm(tiles, startIndex) ?: return null
+    // The parser is broken into a hierarchy of functions, where each function
+    // handles operators of a certain precedence level.
 
-        // Check if there's a binary operator next
-        val operator = tiles.getOrNull(nextIndex)
-        if (operator?.type == SymbolType.BINARY_OPERATOR) {
-            // If so, parse the right-hand side
-            val (right, finalIndex) = parseExpression(tiles, nextIndex + 1) ?: return null
-            val node = FormulaNode.BinaryOpNode(operator, left, right)
-            return Pair(node, finalIndex)
+    // Handles '→' and '↔' (lowest precedence, right-associative)
+    private fun parseImplication(state: ParserState): FormulaNode? {
+        val left = parseDisjunction(state) ?: return null
+        // Use a simple 'if' for right-associativity, not a 'while' loop.
+        if (state.current()?.symbol == "→" || state.current()?.symbol == "↔") {
+            val op = state.current()!!
+            state.advance()
+            // Recurse on parseImplication itself for the right-hand side.
+            val right = parseImplication(state) ?: return null
+            return FormulaNode.BinaryOpNode(op, left, right)
         }
-
-        // If no operator, it's just the term itself.
-        return Pair(left, nextIndex)
+        return left
     }
 
-    /**
-     * Parses a "term", which is either a single variable, a negated term,
-     * or a parenthesized expression.
-     */
-    private fun parseTerm(tiles: List<LogicTile>, startIndex: Int): Pair<FormulaNode, Int>? {
-        val currentTile = tiles.getOrNull(startIndex) ?: return null
+    // Handles '∨' (left-associative)
+    private fun parseDisjunction(state: ParserState): FormulaNode? {
+        var left = parseConjunction(state) ?: return null
+        while (state.current()?.symbol == "∨") {
+            val op = state.current()!!
+            state.advance()
+            val right = parseConjunction(state) ?: return null
+            left = FormulaNode.BinaryOpNode(op, left, right)
+        }
+        return left
+    }
 
-        return when (currentTile.type) {
+    // Handles '∧' (left-associative)
+    private fun parseConjunction(state: ParserState): FormulaNode? {
+        var left = parseFactor(state) ?: return null
+        while (state.current()?.symbol == "∧") {
+            val op = state.current()!!
+            state.advance()
+            val right = parseFactor(state) ?: return null
+            left = FormulaNode.BinaryOpNode(op, left, right)
+        }
+        return left
+    }
+
+    // Handles the highest precedence items: variables, negations, and parentheses.
+    private fun parseFactor(state: ParserState): FormulaNode? {
+        val tile = state.current() ?: return null
+        return when (tile.type) {
             SymbolType.VARIABLE -> {
-                Pair(FormulaNode.VariableNode(currentTile), startIndex + 1)
+                state.advance()
+                FormulaNode.VariableNode(tile)
             }
             SymbolType.UNARY_OPERATOR -> {
-                // Parse the term that follows the negation.
-                val (operand, nextIndex) = parseTerm(tiles, startIndex + 1) ?: return null
-                val node = FormulaNode.UnaryOpNode(currentTile, operand)
-                Pair(node, nextIndex)
+                state.advance() // Consume '¬'
+                val operand = parseFactor(state) ?: return null // Negation applies to the next factor
+                FormulaNode.UnaryOpNode(tile, operand)
             }
             SymbolType.LEFT_PAREN -> {
-                // The content inside the parentheses is a full new expression.
-                val (expression, nextIndex) = parseExpression(tiles, startIndex + 1) ?: return null
-                // Check for the closing parenthesis.
-                if (tiles.getOrNull(nextIndex)?.type == SymbolType.RIGHT_PAREN) {
-                    Pair(expression, nextIndex + 1) // Consume ')'
-                } else {
-                    null // Mismatched parentheses
-                }
+                state.advance() // Consume '('
+                val expression = parseImplication(state) // Start parsing from the lowest precedence inside parens
+                if (state.current()?.type != SymbolType.RIGHT_PAREN) return null
+                state.advance() // Consume ')'
+                expression
             }
-            else -> null // Unexpected token
+            else -> null
         }
     }
 }
