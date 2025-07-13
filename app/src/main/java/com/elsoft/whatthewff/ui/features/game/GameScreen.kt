@@ -133,22 +133,23 @@ fun ConstructionArea(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            LazyRow(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (formula.tiles.isEmpty()) {
-                    Text(
-                        "Tap a symbol to begin...",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    // TODO: Create string resource for this
+                    item {
+                        Text(
+                            "Tap a symbol to begin...",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // TODO: Create string resource for this
+                    }
                 } else {
-                    formula.tiles.forEach { tile ->
+                    items(formula.tiles) { tile ->
                         // Use a non-clickable version for the construction area
                         Box(
                             modifier = Modifier
-                                .padding(horizontal = 2.dp)
                                 .size(40.dp)
                                 .background(
                                     MaterialTheme.colorScheme.secondaryContainer,

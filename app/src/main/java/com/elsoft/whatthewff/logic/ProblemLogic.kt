@@ -103,11 +103,23 @@ object ProblemSets {
  */
 object ProblemGenerator {
 
+
+//    private fun forwardConjunction(f1: Formula, f2: Formula) = Formula(listOf(AvailableTiles.leftParen) + f1.tiles + listOf(AvailableTiles.and) + f2.tiles + listOf(AvailableTiles.rightParen))
+//    private fun forwardDisjunction(f1: Formula, f2: Formula) = Formula(listOf(AvailableTiles.leftParen) + f1.tiles + listOf(AvailableTiles.or) + f2.tiles + listOf(AvailableTiles.rightParen))
+//    private fun forwardImplication(f1: Formula, f2: Formula) = Formula(listOf(AvailableTiles.leftParen) + f1.tiles + listOf(AvailableTiles.implies) + f2.tiles + listOf(AvailableTiles.rightParen))
+
+//    private fun forwardNegation(f1: Formula) = Formula(listOf(AvailableTiles.not) + f1.tiles)
+//
+//    private val forwardBinaryStrategies = listOf(::forwardConjunction, ::forwardDisjunction, ::forwardImplication)
+
     private val variables = AvailableTiles.variables
-    private val strategies = listOf(
+
+    private val backwardStrategies = listOf(
         RuleGenerators.modusPonens,
         RuleGenerators.modusTollens,
-        RuleGenerators.conjunction
+        RuleGenerators.conjunction,
+        RuleGenerators.hypotheticalSyllogism,
+        RuleGenerators.disjunctiveSyllogism
     )
 
     /**
@@ -117,66 +129,96 @@ object ProblemGenerator {
      * It decides the chain of variables first (e.g., the goal is r, which will be
      * derived from q, which will be derived from p).
      *
+     * The generator takes a goal, finds a strategy to break it down, and addis the new
+     * sub-goals into the list of goals to solve.
+     *
+     * Each strategy is responsible for consuming variables from the single pool of
+     * available variables (availableVars).  If it can't generate a step because the
+     * pool is empty, it simply fails and the generator tries a different strategy.
+     *
+     * TODO: This generator will never produce a compound WFF as a final goal.
+     * This needs to be fixed in the future.  Gemini suggests the following:
+     *
+     * # Phase 1: Goal Construction
+     *
+     * The sole purpose of this phase is to create an interesting finalConclusion that is an
+     * implication. We aren't building the whole proof yet, just the target.
+     *
+     * 1. Start with a few simple formulas (e.g., p, q, r).
+     *
+     * 2. Use our forward-building rules to combine them into a more complex
+     *    formula (e.g., (p ∧ q)).
+     *
+     * 3. Finally, use the forwardImplication rule to create the final goal,
+     *    for example: (r → (p ∧ q)).
+     *
+     * Now we have a goal that requires the user to use Implication Introduction.
+     *
+     * # Phase 2: Premise Deconstruction
+     *
+     * This phase uses the exact same queue-based generator we have now, but it starts with
+     * the complex implication goal we just created.
+     *
+     * 1. The goalsToSolve queue is initialized with our goal: [ (r → (p ∧ q)) ].
+     *
+     * 2. The generator pulls this goal. The hypotheticalSyllogism strategy (or a new, more
+     *    specific "Reverse Implication Introduction" strategy) would apply.
+     *
+     * 3. This strategy would say, "To prove (r → (p ∧ q)), the user needs to assume r and
+     *    derive (p ∧ q)." It would then create a new sub-goal of (p ∧ q).
+     *
+     * 4. The generator would then continue to work backward from (p ∧ q), breaking it down
+     *    further until the difficulty budget is spent.
+     *
+     * This two-phase approach is the key to creating problems that require the full range of
+     * logical rules. It ensures that the generator can create complex, interesting goals and
+     * then build a solvable set of premises for them.
+     *
      * @param difficulty The desired difficulty, controlling the number of backward steps.
      * @return A new Problem object.
      */
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun generate(difficulty: Int): Problem {
-        val varsToUse = variables.shuffled().toMutableList()
+        val availableVars = variables.shuffled().toMutableList()
         var stepsRemaining = difficulty
 
-        // Phase 1: Build a complex goal first.
-        var finalConclusion = Formula(listOf(varsToUse.removeFirst()))
-        for (i in 0 until (difficulty / 2).coerceAtLeast(1)) {
-            val nextVar = varsToUse.removeFirstOrNull() ?: break
-            val op = listOf("∧", "∨", "→").random()
-            val newTiles = mutableListOf(AvailableTiles.leftParen)
-            newTiles.addAll(finalConclusion.tiles)
-            newTiles.add(AvailableTiles.allTiles.find { it.symbol == op }!!)
-            newTiles.add(nextVar)
-            newTiles.add(AvailableTiles.rightParen)
-            finalConclusion = Formula(newTiles)
-        }
+        // Start with a simple variable as the final goal.
+        val finalConclusion = Formula(listOf(availableVars.removeFirst()))
 
-        // Phase 2: Decompose the goal into premises.
         val goalsToSolve = mutableListOf(finalConclusion)
         val premises = mutableListOf<Formula>()
 
         while (goalsToSolve.isNotEmpty() && stepsRemaining > 0) {
             val currentGoal = goalsToSolve.removeFirst()
 
-            val applicableStrategies = strategies.filter { it.canApply(currentGoal) }
-            val strategy = applicableStrategies.randomOrNull()
+            var stepTaken = false
+            val successfulStep =
+                backwardStrategies.shuffled()
+                    .asSequence()
+                    .filter { it.canApply(currentGoal) }
+                    .mapNotNull { it.generate(currentGoal, availableVars) }
+                    .firstOrNull()
 
-            if (strategy != null) {
-                val step = strategy.generate(currentGoal, varsToUse)
-                if (step != null) {
-                    premises.addAll(step.newPremises)
-                    goalsToSolve.addAll(step.nextGoals)
-                    // Remove used variables to avoid conflicts
-                    step.nextGoals.forEach { goal ->
-                        WffParser.parse(goal)?.let { node ->
-                            if (node is FormulaNode.VariableNode) varsToUse.remove(node.tile)
-                        }
-                    }
-                    stepsRemaining--
-                } else {
-                    // Strategy failed, add goal as a premise.
-                    premises.add(currentGoal)
-                }
-            } else {
-                // No strategy applies, add goal as a premise.
+            if (successfulStep != null) {
+                premises.addAll(successfulStep.newPremises)
+                goalsToSolve.addAll(successfulStep.nextGoals)
+                stepsRemaining--
+                stepTaken = true
+            }
+
+            // If no strategy could be applied, add the goal as a premise.
+            if (!stepTaken) {
                 premises.add(currentGoal)
             }
         }
 
-        // Any remaining goals become premises.
+        // Any remaining goals also become premises.
         premises.addAll(goalsToSolve)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
             name = "Generated Problem (Lvl $difficulty)",
-            premises = premises.shuffled(),
+            premises = premises.distinct().shuffled(),
             conclusion = finalConclusion,
             difficulty = difficulty
         )

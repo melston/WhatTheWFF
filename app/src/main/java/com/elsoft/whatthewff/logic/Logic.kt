@@ -90,13 +90,13 @@ object AvailableTiles {
 enum class InferenceRule(val ruleName: String, val abbreviation: String) {
     MODUS_PONENS("Modus Ponens", "MP"),
     MODUS_TOLLENS("Modus Tollens", "MT"),
-//    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
-//    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
-//    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
-//    ABSORPTION("Absorption", "Abs"),
-//    SIMPLIFICATION("Simplification", "Simp"),
+    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
+    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
+    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
+    ABSORPTION("Absorption", "Abs"),
+    SIMPLIFICATION("Simplification", "Simp"),
     CONJUNCTION("Conjunction", "Conj"),
-//    ADDITION("Addition", "Add")
+    ADDITION("Addition", "Add")
 }
 
 enum class ReplacementRule(val ruleName: String, val abbreviation: String) {

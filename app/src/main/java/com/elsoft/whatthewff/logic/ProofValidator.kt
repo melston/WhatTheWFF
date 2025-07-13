@@ -52,18 +52,6 @@ object ProofValidator {
         return ValidationResult(true, "Proof is valid!")
     }
 
-//    private val validationStrategies = mapOf(
-//        InferenceRule.MODUS_PONENS to ::validateModusPonens,
-//        InferenceRule.MODUS_TOLLENS to ::validateModusTollens,
-//        InferenceRule.HYPOTHETICAL_SYLLOGISM to ::validateHypotheticalSyllogism,
-//        InferenceRule.DISJUNCTIVE_SYLLOGISM to ::validateDisjunctiveSyllogism,
-//        InferenceRule.CONSTRUCTIVE_DILEMMA to ::validateConstructiveDilemma,
-//        InferenceRule.ABSORPTION to ::validateAbsorption,
-//        InferenceRule.SIMPLIFICATION to ::validateSimplification,
-//        InferenceRule.CONJUNCTION to ::validateConjunction,
-//        InferenceRule.ADDITION to ::validateAddition
-//    )
-
     /**
      * Validates a line derived by a rule of inference using syntax trees.
      */
@@ -80,13 +68,13 @@ object ProofValidator {
         return when (justification.rule) {
             InferenceRule.MODUS_PONENS -> validateModusPonens(conclusionTree, refTrees, currentLineNumber)
             InferenceRule.MODUS_TOLLENS -> validateModusTollens(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refTrees, currentLineNumber)
             InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refTrees, currentLineNumber)
-//            InferenceRule.ADDITION -> validateAddition(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.ADDITION -> validateAddition(conclusionTree, refTrees, currentLineNumber)
         }
     }
 
