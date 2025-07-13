@@ -3,6 +3,11 @@
 
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.not
+import com.elsoft.whatthewff.logic.AvailableTiles.or
+
 /**
  * A data class to hold the result of a proof validation.
  * This is more informative than a simple Boolean.
@@ -111,7 +116,7 @@ object ProofValidator {
     ): ValidationResult {
 
         // 1. Check that the conclusion is actually an implication (P → Q)
-        if (conclusionTree !is FormulaNode.BinaryOpNode || conclusionTree.operator.symbol != "→") {
+        if (conclusionTree !is FormulaNode.BinaryOpNode || conclusionTree.operator.symbol != implies.symbol) {
             return ValidationResult(false, "Line $currentLineNumber: Implication Introduction must result in an implication.")
         }
 
@@ -155,7 +160,7 @@ object ProofValidator {
 
     private fun checkMP(implication: FormulaNode, antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
         // The implication must be a BinaryOpNode with the '→' operator.
-        if (implication !is FormulaNode.BinaryOpNode || implication.operator.symbol != "→") return false
+        if (implication !is FormulaNode.BinaryOpNode || implication.operator.symbol != implies.symbol) return false
         // The left side of the implication must match the antecedent.
         // The right side of the implication must match the conclusion.
         return implication.left == antecedent && implication.right == conclusion
@@ -174,11 +179,11 @@ object ProofValidator {
 
     private fun checkMT(implication: FormulaNode, negatedConsequent: FormulaNode, conclusion: FormulaNode): Boolean {
         // The implication must be (P → Q).
-        if (implication !is FormulaNode.BinaryOpNode || implication.operator.symbol != "→") return false
+        if (implication !is FormulaNode.BinaryOpNode || implication.operator.symbol != implies.symbol) return false
         // The negated consequent must be (¬Q).
-        if (negatedConsequent !is FormulaNode.UnaryOpNode || negatedConsequent.operator.symbol != "¬") return false
+        if (negatedConsequent !is FormulaNode.UnaryOpNode || negatedConsequent.operator.symbol != not.symbol) return false
         // The conclusion must be (¬P).
-        if (conclusion !is FormulaNode.UnaryOpNode || conclusion.operator.symbol != "¬") return false
+        if (conclusion !is FormulaNode.UnaryOpNode || conclusion.operator.symbol != not.symbol) return false
 
         // Check if the inner part of the negated consequent matches the right side of the implication (Q).
         val qMatches = negatedConsequent.child == implication.right
@@ -200,9 +205,9 @@ object ProofValidator {
     }
 
     private fun checkHS(f1: FormulaNode, f2: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (f1 !is FormulaNode.BinaryOpNode || f1.operator.symbol != "→") return false
-        if (f2 !is FormulaNode.BinaryOpNode || f2.operator.symbol != "→") return false
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != "→") return false
+        if (f1 !is FormulaNode.BinaryOpNode || f1.operator.symbol != implies.symbol) return false
+        if (f2 !is FormulaNode.BinaryOpNode || f2.operator.symbol != implies.symbol) return false
+        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != implies.symbol) return false
         if (f1.right != f2.left) return false
         if (conclusion.left != f1.left) return false
         return conclusion.right == f2.right
@@ -221,8 +226,8 @@ object ProofValidator {
 
     private fun checkDS(disjunction: FormulaNode, negation: FormulaNode, conclusion: FormulaNode): Boolean {
         // 1. Make sure the premises have the right structure.
-        if (disjunction !is FormulaNode.BinaryOpNode || disjunction.operator.symbol != "∨") return false
-        if (negation !is FormulaNode.UnaryOpNode || negation.operator.symbol != "¬") return false
+        if (disjunction !is FormulaNode.BinaryOpNode || disjunction.operator.symbol != or.symbol) return false
+        if (negation !is FormulaNode.UnaryOpNode || negation.operator.symbol != not.symbol) return false
 
         // 2. Get the parts of the formulas.
         val p = disjunction.left
@@ -253,25 +258,25 @@ object ProofValidator {
 
     private fun checkCD(conjOfImps: FormulaNode, disjOfAnts: FormulaNode, conclusion: FormulaNode): Boolean {
         // 1. Deconstruct the main premise: (Imp1 ∧ Imp2)
-        if (conjOfImps !is FormulaNode.BinaryOpNode || conjOfImps.operator.symbol != "∧") return false
+        if (conjOfImps !is FormulaNode.BinaryOpNode || conjOfImps.operator.symbol != and.symbol) return false
         val imp1 = conjOfImps.left
         val imp2 = conjOfImps.right
 
         // 2. Deconstruct the two implications: (P → Q) and (R → S)
-        if (imp1 !is FormulaNode.BinaryOpNode || imp1.operator.symbol != "→") return false
-        if (imp2 !is FormulaNode.BinaryOpNode || imp2.operator.symbol != "→") return false
+        if (imp1 !is FormulaNode.BinaryOpNode || imp1.operator.symbol != implies.symbol) return false
+        if (imp2 !is FormulaNode.BinaryOpNode || imp2.operator.symbol != implies.symbol) return false
         val p = imp1.left
         val q = imp1.right
         val r = imp2.left
         val s = imp2.right
 
         // 3. Deconstruct the second premise: (P ∨ R)
-        if (disjOfAnts !is FormulaNode.BinaryOpNode || disjOfAnts.operator.symbol != "∨") return false
+        if (disjOfAnts !is FormulaNode.BinaryOpNode || disjOfAnts.operator.symbol != or.symbol) return false
         val ant1 = disjOfAnts.left  // Antecedent 1
         val ant2 = disjOfAnts.right // Antecedent 2
 
         // 4. Deconstruct the conclusion: (Q ∨ S)
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != "∨") return false
+        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != or.symbol) return false
         val con1 = conclusion.left  // Consequent 1
         val con2 = conclusion.right // Consequent 2
 
@@ -294,8 +299,8 @@ object ProofValidator {
     }
 
     private fun checkAbsorption(antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (antecedent !is FormulaNode.BinaryOpNode || antecedent.operator.symbol != "→") return false
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != "→") return false
+        if (antecedent !is FormulaNode.BinaryOpNode || antecedent.operator.symbol != implies.symbol) return false
+        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != implies.symbol) return false
         if (conclusion.left != antecedent.left) return false
         if (conclusion.right !is FormulaNode.BinaryOpNode || conclusion.right.operator.symbol != "∧") return false
         val concConj = conclusion.right
@@ -317,7 +322,7 @@ object ProofValidator {
     }
 
     private fun checkSimp(antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (antecedent !is FormulaNode.BinaryOpNode || antecedent.operator.symbol != "∧") return false
+        if (antecedent !is FormulaNode.BinaryOpNode || antecedent.operator.symbol != and.symbol) return false
         return antecedent.left == conclusion || antecedent.right == conclusion
     }
 
@@ -332,7 +337,7 @@ object ProofValidator {
     }
 
     private fun checkConj(f1: FormulaNode, f2: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != "∧") return false
+        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != and.symbol) return false
         return (conclusion.left == f1 && conclusion.right == f2) ||
                 (conclusion.left == f2 && conclusion.right == f1)
     }
@@ -348,7 +353,7 @@ object ProofValidator {
     }
 
     private fun checkAdd(antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != "∨") return false
+        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator.symbol != or.symbol) return false
         return antecedent == conclusion.left || antecedent == conclusion.right
     }
 

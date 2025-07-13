@@ -135,6 +135,28 @@ object RuleGenerators {
         }
     )
 
+    val constructiveDilemma = GenerationStrategy(
+        canApply = { goal -> WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "∨" } ?: false },
+        generate = { goal, availableVars ->
+            if (availableVars.size < 2) return@GenerationStrategy null
+            val qNode = (WffParser.parse(goal) as? FormulaNode.BinaryOpNode)?.left ?: return@GenerationStrategy null
+            val sNode = (WffParser.parse(goal) as? FormulaNode.BinaryOpNode)?.right ?: return@GenerationStrategy null
+
+            val p = Formula(listOf(availableVars.removeAt(0)))
+            val r = Formula(listOf(availableVars.removeAt(0)))
+            val q = treeToFormula(qNode)
+            val s = treeToFormula(sNode)
+
+            val imp1 = Formula(listOf(leftParen) + p.tiles + listOf(implies) + q.tiles + listOf(rightParen))
+            val imp2 = Formula(listOf(leftParen) + r.tiles + listOf(implies) + s.tiles + listOf(rightParen))
+
+            val premise1 = Formula(listOf(leftParen) + imp1.tiles + listOf(and) + imp2.tiles + listOf(rightParen))
+            val nextGoal = Formula(listOf(leftParen) + p.tiles + listOf(or) + r.tiles + listOf(rightParen))
+
+            GenerationStep(newPremises = listOf(premise1), nextGoals = listOf(nextGoal))
+        }
+    )
+
     // This function is now more robust and correctly handles parentheses
     // to match the expectations of the unit tests.
     fun treeToFormula(node: FormulaNode): Formula {

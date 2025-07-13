@@ -127,7 +127,8 @@ object ProblemGenerator {
         RuleGenerators.modusTollens,
         RuleGenerators.conjunction,
         RuleGenerators.hypotheticalSyllogism,
-        RuleGenerators.disjunctiveSyllogism
+        RuleGenerators.disjunctiveSyllogism,
+        RuleGenerators.constructiveDilemma
     )
 
     /**
