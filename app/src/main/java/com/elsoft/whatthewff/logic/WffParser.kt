@@ -4,6 +4,12 @@
 
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.iff
+import com.elsoft.whatthewff.logic.AvailableTiles.or
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+//import com.elsoft.whatthewff.logic.AvailableTiles.not
+
 /**
  * A singleton object responsible for parsing formulas into syntax trees.
  */
@@ -35,7 +41,7 @@ object WffParser {
     private fun parseImplication(state: ParserState): FormulaNode? {
         val left = parseDisjunction(state) ?: return null
         // Use a simple 'if' for right-associativity, not a 'while' loop.
-        if (state.current()?.symbol == "→" || state.current()?.symbol == "↔") {
+        if (state.current()?.symbol == implies.symbol || state.current()?.symbol == iff.symbol) {
             val op = state.current()!!
             state.advance()
             // Recurse on parseImplication itself for the right-hand side.
@@ -48,7 +54,7 @@ object WffParser {
     // Handles '∨' (left-associative)
     private fun parseDisjunction(state: ParserState): FormulaNode? {
         var left = parseConjunction(state) ?: return null
-        while (state.current()?.symbol == "∨") {
+        while (state.current()?.symbol == or.symbol) {
             val op = state.current()!!
             state.advance()
             val right = parseConjunction(state) ?: return null
@@ -60,7 +66,7 @@ object WffParser {
     // Handles '∧' (left-associative)
     private fun parseConjunction(state: ParserState): FormulaNode? {
         var left = parseFactor(state) ?: return null
-        while (state.current()?.symbol == "∧") {
+        while (state.current()?.symbol == and.symbol) {
             val op = state.current()!!
             state.advance()
             val right = parseFactor(state) ?: return null

@@ -3,6 +3,13 @@
 
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.AvailableTiles.or
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.not
+//import com.elsoft.whatthewff.logic.AvailableTiles.implies
+//import com.elsoft.whatthewff.logic.AvailableTiles.iff
+//import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
+//import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
 
 /**
  * A singleton object that handles the application of replacement rules.
@@ -43,9 +50,9 @@ object RuleReplacer {
                 val innerAndNode = node.child
                 val p = innerAndNode.left
                 val q = innerAndNode.right
-                val notP = FormulaNode.UnaryOpNode(AvailableTiles.not, p)
-                val notQ = FormulaNode.UnaryOpNode(AvailableTiles.not, q)
-                possibleNewTrees.add(FormulaNode.BinaryOpNode(AvailableTiles.or, notP, notQ))
+                val notP = FormulaNode.UnaryOpNode(not, p)
+                val notQ = FormulaNode.UnaryOpNode(not, q)
+                possibleNewTrees.add(FormulaNode.BinaryOpNode(or, notP, notQ))
         }
 
         // Form 2: (¬P ∨ ¬Q)  ->  ¬(P ∧ Q)
@@ -54,8 +61,8 @@ object RuleReplacer {
             node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == "¬") {
                 val p = node.left.child
                 val q = node.right.child
-                val innerAndNode = FormulaNode.BinaryOpNode(AvailableTiles.and, p, q)
-                possibleNewTrees.add(FormulaNode.UnaryOpNode(AvailableTiles.not, innerAndNode))
+                val innerAndNode = FormulaNode.BinaryOpNode(and, p, q)
+                possibleNewTrees.add(FormulaNode.UnaryOpNode(not, innerAndNode))
         }
 
         // Form 3: ¬(P ∨ Q)  ->  (¬P ∧ ¬Q)
@@ -64,9 +71,9 @@ object RuleReplacer {
                 val innerOrNode = node.child
                 val p = innerOrNode.left
                 val q = innerOrNode.right
-                val notP = FormulaNode.UnaryOpNode(AvailableTiles.not, p)
-                val notQ = FormulaNode.UnaryOpNode(AvailableTiles.not, q)
-                possibleNewTrees.add(FormulaNode.BinaryOpNode(AvailableTiles.and, notP, notQ))
+                val notP = FormulaNode.UnaryOpNode(not, p)
+                val notQ = FormulaNode.UnaryOpNode(not, q)
+                possibleNewTrees.add(FormulaNode.BinaryOpNode(and, notP, notQ))
         }
 
         // Form 4: (¬P ∧ ¬Q)  ->  ¬(P ∨ Q)
@@ -75,8 +82,8 @@ object RuleReplacer {
             node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == "¬") {
                 val p = node.left.child
                 val q = node.right.child
-                val innerOrNode = FormulaNode.BinaryOpNode(AvailableTiles.or, p, q)
-                possibleNewTrees.add(FormulaNode.UnaryOpNode(AvailableTiles.not, innerOrNode))
+                val innerOrNode = FormulaNode.BinaryOpNode(or, p, q)
+                possibleNewTrees.add(FormulaNode.UnaryOpNode(not, innerOrNode))
         }
 
         // 2. Recursively apply the rule to all CHILDREN nodes.

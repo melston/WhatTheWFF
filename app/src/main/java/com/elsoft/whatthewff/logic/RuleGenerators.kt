@@ -1,5 +1,12 @@
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.or
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.not
+import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
+import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
+//import com.elsoft.whatthewff.logic.AvailableTiles.iff
 
 // Represents the output of one backward step of generation.
 data class GenerationStep(val newPremises: List<Formula>, val nextGoals: List<Formula>)
@@ -17,18 +24,18 @@ object RuleGenerators {
         // Corrected canApply logic to match test expectations for current generator
         // It should not apply if a more specific rule like HS could apply.
         canApply = { goal ->
-            WffParser.parse(goal)?.let { it !is FormulaNode.BinaryOpNode || it.operator.symbol != "→" } ?: true
+            WffParser.parse(goal)?.let { it !is FormulaNode.BinaryOpNode || it.operator.symbol != implies.symbol } ?: true
         },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
             val source = Formula(listOf(availableVars.removeAt(0)))
             val premise = Formula(
                 listOf(
-                    AvailableTiles.leftParen) +
+                    leftParen) +
                     source.tiles +
-                    listOf(AvailableTiles.implies) +
+                    listOf(implies) +
                     goal.tiles +
-                    listOf(AvailableTiles.rightParen)
+                    listOf(rightParen)
             )
             GenerationStep(newPremises = listOf(premise), nextGoals = listOf(source))
         }
@@ -50,14 +57,14 @@ object RuleGenerators {
 
             // The premise is always (P → Q).
             val premise = Formula(
-                listOf(AvailableTiles.leftParen) +
+                listOf(leftParen) +
                         pFormula.tiles +
-                        listOf(AvailableTiles.implies) +
+                        listOf(implies) +
                         qFormula.tiles +
-                        listOf(AvailableTiles.rightParen)
+                        listOf(rightParen)
             )
             // The new goal is always ¬Q.
-            val nextGoal = Formula(listOf(AvailableTiles.not) + qFormula.tiles)
+            val nextGoal = Formula(listOf(not) + qFormula.tiles)
 
             GenerationStep(newPremises = listOf(premise), nextGoals = listOf(nextGoal))
         }
@@ -66,7 +73,7 @@ object RuleGenerators {
     val conjunction = GenerationStrategy(
         canApply = { goal ->
             // Can only apply if the goal is a conjunction.
-            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "∧" } ?: false
+            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == and.symbol } ?: false
         },
         generate = { goal, _ ->
             WffParser.parse(goal)?.let { node ->
@@ -82,22 +89,22 @@ object RuleGenerators {
     val hypotheticalSyllogism = GenerationStrategy(
         canApply = { goal ->
             // Can only apply if the goal is a conjunction.
-            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "→" } ?: false
+            WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == implies.symbol } ?: false
         },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
             WffParser.parse(goal)?.let { node ->
                 // This is already checked in canApply, but just in case...
-                if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "→") {
+                if (node is FormulaNode.BinaryOpNode && node.operator.symbol == implies.symbol) {
                     val p = treeToFormula(node.left)
                     val r = treeToFormula(node.right)
                     val q = Formula(listOf(availableVars.removeAt(0))) // Intermediate variable
-                    val goal1 = Formula(listOf(AvailableTiles.leftParen) +
-                                                p.tiles + listOf(AvailableTiles.implies) + q.tiles +
-                                                listOf(AvailableTiles.rightParen))
-                    val goal2 = Formula(listOf(AvailableTiles.leftParen) +
-                                                q.tiles + listOf(AvailableTiles.implies) + r.tiles +
-                                                listOf(AvailableTiles.rightParen))
+                    val goal1 = Formula(listOf(leftParen) +
+                                                p.tiles + listOf(implies) + q.tiles +
+                                                listOf(rightParen))
+                    val goal2 = Formula(listOf(leftParen) +
+                                                q.tiles + listOf(implies) + r.tiles +
+                                                listOf(rightParen))
                     GenerationStep(newPremises = emptyList(), nextGoals = listOf(goal1, goal2))
                 } else null
             }
@@ -117,12 +124,12 @@ object RuleGenerators {
 
             val premise1 =
                 Formula(
-                    listOf(AvailableTiles.leftParen) +
+                    listOf(leftParen) +
                             p.tiles +
-                            listOf(AvailableTiles.or) +
+                            listOf(or) +
                             q.tiles +
-                            listOf(AvailableTiles.rightParen))
-            val premise2 = Formula(listOf(AvailableTiles.not) + p.tiles)
+                            listOf(rightParen))
+            val premise2 = Formula(listOf(not) + p.tiles)
 
             GenerationStep(newPremises = listOf(premise1), nextGoals = listOf(premise2))
         }
@@ -138,17 +145,17 @@ object RuleGenerators {
                     tiles.add(n.tile)
                 }
                 is FormulaNode.UnaryOpNode -> {
-                    tiles.add(AvailableTiles.leftParen)
+                    tiles.add(leftParen)
                     tiles.add(n.operator)
                     recurse(n.child)
-                    tiles.add(AvailableTiles.rightParen)
+                    tiles.add(rightParen)
                 }
                 is FormulaNode.BinaryOpNode -> {
-                    tiles.add(AvailableTiles.leftParen)
+                    tiles.add(leftParen)
                     recurse(n.left)
                     tiles.add(n.operator)
                     recurse(n.right)
-                    tiles.add(AvailableTiles.rightParen)
+                    tiles.add(rightParen)
                 }
             }
         }

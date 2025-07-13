@@ -39,6 +39,14 @@ import com.elsoft.whatthewff.ui.features.game.ConstructionArea
 import com.elsoft.whatthewff.ui.features.game.SymbolPalette
 import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
 
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
+import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
+//import com.elsoft.whatthewff.logic.AvailableTiles.iff
+//import com.elsoft.whatthewff.logic.AvailableTiles.or
+//import com.elsoft.whatthewff.logic.AvailableTiles.and
+//import com.elsoft.whatthewff.logic.AvailableTiles.not
+
 /**
  * Displays a single, formatted line of a proof.
  *
@@ -450,11 +458,11 @@ fun ProofScreen(
                                         if (assumptionFormula != null) {
                                             val implication =
                                                 Formula(listOf(
-                                                        AvailableTiles.leftParen) +
+                                                        leftParen) +
                                                         assumptionFormula.tiles +
-                                                        listOf(AvailableTiles.implies) +
+                                                        listOf(implies) +
                                                         conclusionFormula.tiles +
-                                                        listOf(AvailableTiles.rightParen))
+                                                        listOf(rightParen))
                                             val newLine = ProofLine(endLine + 1,
                                                                     implication,
                                                                     Justification.ImplicationIntroduction(startLine, endLine),
