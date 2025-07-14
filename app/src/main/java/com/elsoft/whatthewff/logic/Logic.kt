@@ -102,14 +102,14 @@ enum class InferenceRule(val ruleName: String, val abbreviation: String) {
 enum class ReplacementRule(val ruleName: String, val abbreviation: String) {
     DEMORGANS_THEOREM("De Morgan's Theorem", "DM"),
     COMMUTATION("Commutation", "Comm"),
-//    ASSOCIATION("Association", "Assoc"),
-//    DISTRIBUTION("Distribution", "Dist"),
-//    DOUBLE_NEGATION("Double Negation", "DN"),
-//    TRANSPOSITON("Transposition", "Trans"),
-//    MATERIAL_IMPLICATION("Material Implication", "MI"),
-//    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
-//    EXPORTATION("Exporation", "Exp"),
-//    TAUTOLOGY("Tautology", "Tau")
+    ASSOCIATION("Association", "Assoc"),
+    DISTRIBUTION("Distribution", "Dist"),
+    DOUBLE_NEGATION("Double Negation", "DN"),
+    TRANSPOSITION("Transposition", "Trans"),
+    MATERIAL_IMPLICATION("Material Implication", "MI"),
+    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
+    EXPORTATION("Exporation", "Exp"),
+    TAUTOLOGY("Tautology", "Tau")
 }
 
 /**

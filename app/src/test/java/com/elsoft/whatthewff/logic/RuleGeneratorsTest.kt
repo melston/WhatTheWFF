@@ -3,6 +3,7 @@
 
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.AvailableTiles.or
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -20,6 +21,55 @@ class RuleGeneratorsTest {
         val actualStrings = actual.map { it.stringValue }.toSet()
         assertEquals(message, expected, actualStrings)
     }
+
+    // ------------------ canApply tests ----------------------------------------
+
+    @Test
+    fun `modusPonens canApply is correct`() {
+        val goal = f("(p→q)")
+        val result = RuleGenerators.modusPonens.canApply(goal)
+        assertFalse("MP should not apply to implication goals like '(p→q)'. Actual: $result", result)
+    }
+
+    @Test
+    fun `conjunction canApply is correct`() {
+        val goal = f("(p∨q)")
+        val result = RuleGenerators.conjunction.canApply(goal)
+        assertFalse("Conjunction should not apply to non-conjunction goals like '(p∨q)'. Actual: $result", result)
+    }
+
+    @Test
+    fun `hypotheticalSyllogism canApply is correct`() {
+        val goal = f("(p∨q)")
+        val result = RuleGenerators.hypotheticalSyllogism.canApply(goal)
+        assertFalse("HS should not apply to non-implication goals like '(p∨q)'. Actual: $result", result)
+    }
+
+    @Test
+    fun `constructiveDilemma canApply is correct for disjunctions`() {
+        val goal = f("(p∨q)") // A disjunction
+        val result = RuleGenerators.constructiveDilemma.canApply(goal)
+        assertTrue("Constructive Dilemma should apply to disjunctive goals like '(p∨q)'. Actual: $result", result)
+    }
+
+    @Test
+    fun `constructiveDilemma canApply is false for non-disjunctions`() {
+        val goal1 = f("(p→q)") // An implication
+        val result1 = RuleGenerators.constructiveDilemma.canApply(goal1)
+        assertFalse("Constructive Dilemma should not apply to non-disjunction goals like '(p→q)'. Actual: $result1", result1)
+
+        val goal2 = f("p") // A single proposition
+        val result2 = RuleGenerators.constructiveDilemma.canApply(goal2)
+        assertFalse("Constructive Dilemma should not apply to single proposition goals like 'p'. Actual: $result2", result2)
+
+        val goal3 = f("(p∧q)") // A conjunction
+        val result3 = RuleGenerators.constructiveDilemma.canApply(goal3)
+        assertFalse("Constructive Dilemma should not apply to conjunctive goals like '(p∧q)'. Actual: $result3", result3)
+    }
+
+    // Disjunctive Syllogism can always be applied.
+
+    //----------------  generate tests ----------------------------------------
 
     @Test
     fun `modusPonens strategy generates correct premise and next goal`() {
@@ -68,6 +118,38 @@ class RuleGeneratorsTest {
     }
 
     @Test
+    fun `constructiveDilemma strategy generates correct new premises`() {
+        // Goal: (q∨s)
+        // We need P and R from availableVars. Let's say P is 'p' and R is 'r'.
+        // Expected new premises: ((p→q)∧(r→s)) and (p∨r)
+        val goal = f("(q∨s)")
+        val availableVars = mutableListOf(
+            AvailableTiles.p, // This will be used for P
+            AvailableTiles.r  // This will be used for R
+        )
+
+        val step = RuleGenerators.constructiveDilemma.generate(goal, availableVars)
+
+        assertNotNull("Generation step should not be null for Constructive Dilemma", step)
+        assertTrue(
+            "Should generate 0 new premises. Actual: ${step!!.newPremises.map { it.stringValue }}",
+            step.newPremises.isEmpty()
+        )
+        assertEquals(
+            "Should generate 2 new goals. Actual: ${step.nextGoals.map { it.stringValue }}",
+            2,
+            step.nextGoals.size
+        )
+
+        val expectedNextGoals = setOf("((p→q)∧(r→s))", "(p∨r)")
+        assertFormulaSetsEqual(
+            "Next goals are incorrect.",
+            expected = expectedNextGoals,
+            actual = step.nextGoals
+        )
+    }
+
+    @Test
     fun `disjunctiveSyllogism strategy generates correct premise and next goal`() {
         val goal = f("q")
         val availableVars = mutableListOf(AvailableTiles.p)
@@ -79,26 +161,5 @@ class RuleGeneratorsTest {
         assertEquals("Generated premise should be (p∨q)", "(p∨q)", step.newPremises.first().stringValue)
         assertEquals("Should generate 1 next goal", 1, step.nextGoals.size)
         assertEquals("Next goal should be ¬p", "¬p", step.nextGoals.first().stringValue)
-    }
-
-    @Test
-    fun `modusPonens canApply is correct`() {
-        val goal = f("(p→q)")
-        val result = RuleGenerators.modusPonens.canApply(goal)
-        assertFalse("MP should not apply to implication goals like '(p→q)'. Actual: $result", result)
-    }
-
-    @Test
-    fun `conjunction canApply is correct`() {
-        val goal = f("(p∨q)")
-        val result = RuleGenerators.conjunction.canApply(goal)
-        assertFalse("Conjunction should not apply to non-conjunction goals like '(p∨q)'. Actual: $result", result)
-    }
-
-    @Test
-    fun `hypotheticalSyllogism canApply is correct`() {
-        val goal = f("(p∨q)")
-        val result = RuleGenerators.hypotheticalSyllogism.canApply(goal)
-        assertFalse("HS should not apply to non-implication goals like '(p∨q)'. Actual: $result", result)
     }
 }

@@ -43,8 +43,8 @@ object ProofValidator {
                 is Justification.Premise -> ValidationResult(true) // Premises are assumed valid.
                 is Justification.Assumption -> ValidationResult(true) // Assumptions are assumed valid.
                 is Justification.Inference -> validateInference(currentTree, line.justification, provenTrees, line.lineNumber)
-                is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, line.justification, proof, line.lineNumber)
                 is Justification.Replacement -> validateReplacement(currentTree, line.justification, provenTrees, line.lineNumber)
+                is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, line.justification, proof, line.lineNumber)
             }
 
             if (!justificationResult.isValid) {

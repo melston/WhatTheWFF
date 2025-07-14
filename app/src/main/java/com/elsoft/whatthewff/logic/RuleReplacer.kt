@@ -29,6 +29,14 @@ object RuleReplacer {
         return when (rule) {
             ReplacementRule.DEMORGANS_THEOREM -> applyDeMorgans(rootNode)
             ReplacementRule.COMMUTATION -> applyCommutation(rootNode)
+            ReplacementRule.ASSOCIATION -> TODO()
+            ReplacementRule.DISTRIBUTION -> TODO()
+            ReplacementRule.DOUBLE_NEGATION -> TODO()
+            ReplacementRule.TRANSPOSITION -> TODO()
+            ReplacementRule.MATERIAL_IMPLICATION -> TODO()
+            ReplacementRule.MATERIAL_EQUIVALENCE -> TODO()
+            ReplacementRule.EXPORTATION -> TODO()
+            ReplacementRule.TAUTOLOGY -> TODO()
         }
     }
 
@@ -44,9 +52,9 @@ object RuleReplacer {
         // This involves checking for all four possible patterns (both rules, both directions).
 
         // Form 1: ¬(P ∧ Q)  ->  (¬P ∨ ¬Q)
-        if (node is FormulaNode.UnaryOpNode && node.operator.symbol == "¬" &&
+        if (node is FormulaNode.UnaryOpNode && node.operator.symbol == not.symbol &&
             node.child is FormulaNode.BinaryOpNode &&
-            node.child.operator.symbol == "∧") {
+            node.child.operator.symbol == and.symbol) {
                 val innerAndNode = node.child
                 val p = innerAndNode.left
                 val q = innerAndNode.right
@@ -56,9 +64,9 @@ object RuleReplacer {
         }
 
         // Form 2: (¬P ∨ ¬Q)  ->  ¬(P ∧ Q)
-        if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "∨" &&
-            node.left is FormulaNode.UnaryOpNode && node.left.operator.symbol == "¬" &&
-            node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == "¬") {
+        if (node is FormulaNode.BinaryOpNode && node.operator.symbol == or.symbol &&
+            node.left is FormulaNode.UnaryOpNode && node.left.operator.symbol == not.symbol &&
+            node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == not.symbol) {
                 val p = node.left.child
                 val q = node.right.child
                 val innerAndNode = FormulaNode.BinaryOpNode(and, p, q)
@@ -66,8 +74,8 @@ object RuleReplacer {
         }
 
         // Form 3: ¬(P ∨ Q)  ->  (¬P ∧ ¬Q)
-        if (node is FormulaNode.UnaryOpNode && node.operator.symbol == "¬" &&
-            node.child is FormulaNode.BinaryOpNode && node.child.operator.symbol == "∨") {
+        if (node is FormulaNode.UnaryOpNode && node.operator.symbol == not.symbol &&
+            node.child is FormulaNode.BinaryOpNode && node.child.operator.symbol == or.symbol) {
                 val innerOrNode = node.child
                 val p = innerOrNode.left
                 val q = innerOrNode.right
@@ -77,9 +85,9 @@ object RuleReplacer {
         }
 
         // Form 4: (¬P ∧ ¬Q)  ->  ¬(P ∨ Q)
-        if (node is FormulaNode.BinaryOpNode && node.operator.symbol == "∧" &&
-            node.left is FormulaNode.UnaryOpNode && node.left.operator.symbol == "¬" &&
-            node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == "¬") {
+        if (node is FormulaNode.BinaryOpNode && node.operator.symbol == and.symbol &&
+            node.left is FormulaNode.UnaryOpNode && node.left.operator.symbol == not.symbol &&
+            node.right is FormulaNode.UnaryOpNode && node.right.operator.symbol == not.symbol) {
                 val p = node.left.child
                 val q = node.right.child
                 val innerOrNode = FormulaNode.BinaryOpNode(or, p, q)
@@ -109,13 +117,18 @@ object RuleReplacer {
         val possibleNewTrees = mutableListOf<FormulaNode>()
 
         // 1. Apply the rule at the CURRENT node, if possible.
-        if (node is FormulaNode.BinaryOpNode && (node.operator.symbol == "∧" || node.operator.symbol == "∨")) {
+        if (node is FormulaNode.BinaryOpNode &&
+            (node.operator.symbol == and.symbol || node.operator.symbol == or.symbol)) {
             // Create the commuted version of this node by swapping left and right children.
             val commutedNode = node.copy(left = node.right, right = node.left)
             possibleNewTrees.add(commutedNode)
         }
 
-        // 2. Recursively apply the rule to all CHILDREN nodes and rebuild the current node.
+        // 2. Recursively apply the rule to all CHILDREN nodes and
+        //    rebuild the current node.  This is the key here.  We are
+        //    iteratively building all the possible permutations of the
+        //    parent node with all the possible permutations of the
+        //    child nodes.
         when (node) {
             is FormulaNode.UnaryOpNode -> {
                 // Get all possible transformations of the child.
@@ -126,12 +139,18 @@ object RuleReplacer {
                 }
             }
             is FormulaNode.BinaryOpNode -> {
+                // Rebuild the node by recursively applying the rule to both children,
+                // then hold one side the same as the original and create new possible
+                // nodes with all the possible transformations of the other side.
+
                 // Get all possible transformations of the left child.
+                // Keep the right child the same as the original.
                 applyCommutation(node.left).forEach { txLeft ->
                     possibleNewTrees.add(node.copy(left = txLeft))
                 }
 
                 // Get all possible transformations of the right child.
+                // Keep the left child the same as the original.
                 applyCommutation(node.right).forEach { txRight ->
                     possibleNewTrees.add(node.copy(right = txRight))
                 }
