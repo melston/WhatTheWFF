@@ -40,37 +40,26 @@ object RuleGenerators {
 
     // This function is now more robust and correctly handles parentheses
     // to match the expectations of the unit tests.
-    private fun treeToFormula(node: FormulaNode): Formula {
+    fun treeToFormula(node: FormulaNode, isToplevel: Boolean = true): Formula {
         val tiles = mutableListOf<LogicTile>()
-        fun recurse(n: FormulaNode) {
+        fun build(n: FormulaNode, isInner: Boolean) {
+            val needsParens = isInner && (n is FormulaNode.BinaryOpNode || n is FormulaNode.UnaryOpNode)
+            if (needsParens) tiles.add(AvailableTiles.leftParen)
             when (n) {
-                is FormulaNode.VariableNode -> {
-                    tiles.add(n.tile)
-                }
+                is FormulaNode.VariableNode -> tiles.add(n.tile)
                 is FormulaNode.UnaryOpNode -> {
-                    tiles.add(leftParen)
                     tiles.add(n.operator)
-                    recurse(n.child)
-                    tiles.add(rightParen)
+                    build(n.child, true)
                 }
                 is FormulaNode.BinaryOpNode -> {
-                    tiles.add(leftParen)
-                    recurse(n.left)
+                    build(n.left, true)
                     tiles.add(n.operator)
-                    recurse(n.right)
-                    tiles.add(rightParen)
+                    build(n.right, true)
                 }
             }
+            if (needsParens) tiles.add(AvailableTiles.rightParen)
         }
-
-        // A special case to handle top-level negations like ¬p without adding extra parens
-        if (node is FormulaNode.UnaryOpNode) {
-            tiles.add(node.operator)
-            recurse(node.child)
-        } else {
-            recurse(node)
-        }
-
+        build(node, !isToplevel)
         return Formula(tiles)
     }
 
