@@ -111,25 +111,10 @@ object ProblemSets {
  */
 object ProblemGenerator {
 
-
-//    private fun forwardConjunction(f1: Formula, f2: Formula) = Formula(listOf(leftParen) + f1.tiles + listOf(and) + f2.tiles + listOf(rightParen))
-//    private fun forwardDisjunction(f1: Formula, f2: Formula) = Formula(listOf(leftParen) + f1.tiles + listOf(or) + f2.tiles + listOf(rightParen))
-//    private fun forwardImplication(f1: Formula, f2: Formula) = Formula(listOf(leftParen) + f1.tiles + listOf(implies) + f2.tiles + listOf(rightParen))
-
-//    private fun forwardNegation(f1: Formula) = Formula(listOf(not) + f1.tiles)
-//
-//    private val forwardBinaryStrategies = listOf(::forwardConjunction, ::forwardDisjunction, ::forwardImplication)
-
     private val variables = AvailableTiles.variables
 
-    private val backwardStrategies = listOf(
-        RuleGenerators.modusPonens,
-        RuleGenerators.modusTollens,
-        RuleGenerators.conjunction,
-        RuleGenerators.hypotheticalSyllogism,
-        RuleGenerators.disjunctiveSyllogism,
-        RuleGenerators.constructiveDilemma
-    )
+    private val backwardStrategies = RuleGenerators.allStrategies
+    private val forwardStrategies = ForwardRuleGenerators.allStrategies
 
     /**
      * Generates a new problem of a given difficulty.
@@ -191,9 +176,37 @@ object ProblemGenerator {
         val availableVars = variables.shuffled().toMutableList()
         var stepsRemaining = difficulty
 
-        // Start with a simple variable as the final goal.
-        val finalConclusion = Formula(listOf(availableVars.removeFirst()))
+        // Phase 1: Build a complex goal using the new forward strategies.
+        val knownFormulas = mutableSetOf<Formula>()
+        val constructionSteps = (difficulty - 1).coerceAtLeast(1)
 
+        // Start with a base of simple variables.
+        for (i in 0..constructionSteps) {
+            if (availableVars.isNotEmpty()) {
+                knownFormulas.add(Formula(listOf(availableVars.removeAt(0))))
+            }
+        }
+
+        var lastForwardStrategy: ForwardGenerationStrategy? = null
+        for (i in 0 until constructionSteps) {
+            val possibleStrategies = forwardStrategies.filter { it != lastForwardStrategy }
+            if (possibleStrategies.isEmpty()) break
+
+            val strategy = possibleStrategies.random()
+
+            val requiredFormulas = if (strategy == ForwardRuleGenerators.negation) 1 else 2
+            if (knownFormulas.size < requiredFormulas) continue
+
+            val sourceFormulas = knownFormulas.shuffled().take(requiredFormulas)
+            val newFormula = strategy(sourceFormulas)
+            if (newFormula != null) {
+                knownFormulas.add(newFormula)
+                lastForwardStrategy = strategy
+            }
+        }
+        val finalConclusion = knownFormulas.last()
+
+        // Phase 2: Decompose the goal into premises.
         val goalsToSolve = mutableListOf(finalConclusion)
         val premises = mutableListOf<Formula>()
 
@@ -201,27 +214,24 @@ object ProblemGenerator {
             val currentGoal = goalsToSolve.removeFirst()
 
             var stepTaken = false
-            val successfulStep =
-                backwardStrategies.shuffled()
-                    .asSequence()
-                    .filter { it.canApply(currentGoal) }
-                    .mapNotNull { it.generate(currentGoal, availableVars) }
-                    .firstOrNull()
-
-            if (successfulStep != null) {
-                premises.addAll(successfulStep.newPremises)
-                goalsToSolve.addAll(successfulStep.nextGoals)
-                stepsRemaining--
-                stepTaken = true
+            for (strategy in backwardStrategies.shuffled()) {
+                if (strategy.canApply(currentGoal)) {
+                    val step = strategy.generate(currentGoal, availableVars)
+                    if (step != null) {
+                        premises.addAll(step.newPremises)
+                        goalsToSolve.addAll(step.nextGoals)
+                        stepsRemaining--
+                        stepTaken = true
+                        break
+                    }
+                }
             }
 
-            // If no strategy could be applied, add the goal as a premise.
             if (!stepTaken) {
                 premises.add(currentGoal)
             }
         }
 
-        // Any remaining goals also become premises.
         premises.addAll(goalsToSolve)
 
         return Problem(

@@ -6,7 +6,6 @@ import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.not
 import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
 import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
-//import com.elsoft.whatthewff.logic.AvailableTiles.iff
 
 /**
  * Represents the output of one backward step of generation.
@@ -203,5 +202,7 @@ object RuleGenerators {
             GenerationStep(newPremises = emptyList(), nextGoals = listOf(goal1, goal2))
         }
     )
+
+    val allStrategies = listOf(modusPonens, modusTollens, conjunction, hypotheticalSyllogism, disjunctiveSyllogism, constructiveDilemma)
 
 }
