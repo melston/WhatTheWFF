@@ -43,6 +43,10 @@ data class Formula(val tiles: List<LogicTile>) {
     // Helper property to easily get the string representation of a formula
     val stringValue: String
         get() = tiles.joinToString(separator = "") { it.symbol }
+
+    override fun toString(): String {
+        return stringValue
+    }
 }
 
 /**
@@ -59,6 +63,7 @@ object AvailableTiles {
     val t = LogicTile("t", SymbolType.VARIABLE)
     val u = LogicTile("u", SymbolType.VARIABLE)
     val v = LogicTile("v", SymbolType.VARIABLE)
+    val w = LogicTile("w", SymbolType.VARIABLE)
 
     // Operators
     val not = LogicTile("¬", SymbolType.UNARY_OPERATOR)
@@ -74,7 +79,7 @@ object AvailableTiles {
     /**
      * A complete list of all defined tiles. We'll use this to populate the UI.
      */
-    val variables = listOf(p, q, r, s, t, u, v)
+    val variables = listOf(p, q, r, s, t, u, v, w)
     val operators = listOf(not, and, or, implies, iff)
     val grouping = listOf(leftParen, rightParen)
     val connectors = operators + grouping

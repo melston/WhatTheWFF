@@ -30,6 +30,7 @@ data class GenerationStep(val newPremises: List<Formula>, val nextGoals: List<Fo
  *           variables to generate the next goal.
  */
 data class GenerationStrategy(
+    val name: String,
     val canApply: (goal: Formula) -> Boolean,
     val generate: (goal: Formula, availableVars: MutableList<LogicTile>) -> GenerationStep?
 )
@@ -62,28 +63,38 @@ object RuleGenerators {
         return Formula(tiles)
     }
 
+    /**
+     * Creative Strategy: Take a goal of the form Q and return:
+     *  - Premises: [ (P → Q) ]
+     *  - Goals: [ Q ]
+     *  - Consumes: one variable [ P ]
+     */
     val modusPonens = GenerationStrategy(
-        // Corrected canApply logic to match test expectations for current generator
-        // It should not apply if a more specific rule like HS could apply.
-        canApply = { goal ->
-            WffParser.parse(goal)?.let { it !is FormulaNode.BinaryOpNode || it.operator.symbol != implies.symbol } ?: true
-        },
+        name = "Modus Ponens",
+        canApply = { true },
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
-            val source = Formula(listOf(availableVars.removeAt(0)))
+            val pFormula = Formula(listOf(availableVars.removeAt(0)))
             val premise = Formula(
                 listOf(
                     leftParen) +
-                    source.tiles +
+                    pFormula.tiles +
                     listOf(implies) +
                     goal.tiles +
                     listOf(rightParen)
             )
-            GenerationStep(newPremises = listOf(premise), nextGoals = listOf(source))
+            GenerationStep(newPremises = listOf(premise), nextGoals = listOf(pFormula))
         }
     )
 
+    /**
+     * Creative Strategy: Take a goal of the form ¬P and return:
+     *  - Premises: [ (P -> Q) ]
+     *  - Goals: [ ¬Q ]
+     *  - Consumes: one variable [ Q ]
+     */
     val modusTollens = GenerationStrategy(
+        name = "Modus Tollens",
         canApply = { goal ->
             // MT can only apply if the goal is a negation.
             WffParser.parse(goal)?.let { it is FormulaNode.UnaryOpNode } ?: false
@@ -112,7 +123,14 @@ object RuleGenerators {
         }
     )
 
+    /**
+     * Structural Strategy: Take a goal of the form (P ∧ Q) and return:
+     *  - Premises: []
+     *  - Goals: [ P, Q ]
+     *  - Consumes: no variables
+     */
     val conjunction = GenerationStrategy(
+        name = "Conjunction",
         canApply = { goal ->
             // Can only apply if the goal is a conjunction.
             WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == and.symbol } ?: false
@@ -129,6 +147,7 @@ object RuleGenerators {
     )
 
     val hypotheticalSyllogism = GenerationStrategy(
+        name = "Hypothetical Syllogism",
         canApply = { goal ->
             // Can only apply if the goal is a conjunction.
             WffParser.parse(goal)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == implies.symbol } ?: false
@@ -153,7 +172,14 @@ object RuleGenerators {
         }
     )
 
+    /**
+     * Creative Strategy: Take any goal (say Q) and return:
+     *  - Premises: [ (P ∨ Q) ]
+     *  - Goals: [ ¬P ]
+     *  - Consumes: one variable [ P ]
+     */
     val disjunctiveSyllogism = GenerationStrategy(
+        name = "Disjunctive Syllogism",
         canApply = { true }, // Can apply to any goal
         generate = { goal, availableVars ->
             if (availableVars.isEmpty()) return@GenerationStrategy null
@@ -177,7 +203,14 @@ object RuleGenerators {
         }
     )
 
+    /**
+     * Structural Strategy: Take a goal of the form (Q ∧ S) and return:
+     *  - Premises: []
+     *  - Goals: two new goals: [ ((P → Q) ∧ (R → S)), (P ∨ R) ]
+     *  - Consumes: two variables [R, S]
+     */
     val constructiveDilemma = GenerationStrategy(
+        name = "Constructive Dilemma",
         canApply = { goal ->
             WffParser.parse(goal)?.let {
                 it is FormulaNode.BinaryOpNode && it.operator.symbol == or.symbol
@@ -205,4 +238,13 @@ object RuleGenerators {
 
     val allStrategies = listOf(modusPonens, modusTollens, conjunction, hypotheticalSyllogism, disjunctiveSyllogism, constructiveDilemma)
 
+    // Structural Strategies: These are rules that deconstruct a complex goal based on its main
+    // operator (e.g., Conjunction, Hypothetical Syllogism). They are the most logical choice
+    // when a goal is complex.
+    val structuralStrategies = listOf(conjunction, hypotheticalSyllogism, constructiveDilemma)
+
+    // Creative Strategies: These are rules that add a new layer of complexity to a simpler goal
+    // (e.g., Modus Ponens, Disjunctive Syllogism). They are best used when the goal is a simple
+    // variable that can't be deconstructed further.
+    val creativeStrategies = listOf(modusPonens, modusTollens, disjunctiveSyllogism)
 }
