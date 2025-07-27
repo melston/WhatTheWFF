@@ -43,7 +43,7 @@ object ProblemSets {
      * This allows for clear and concise problem definitions.
      * Example: f("(p→q)")
      */
-    public fun f(formulaString: String): Formula {
+    fun f(formulaString: String): Formula {
         // Create a quick lookup map for mapping characters to their LogicTile objects.
         val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
 
@@ -107,16 +107,70 @@ object ProblemSets {
 }
 
 /**
- * Generates new logic problems procedurally by working backward from a conclusion.
+ * Generates new logic problems procedurally by building up a final conclusion (based on difficulty
+ * level chosen) and then working backward to create the initial premises.
  */
 object ProblemGenerator {
 
     private val variables = AvailableTiles.variables
-
     private val forwardStrategies = ForwardRuleGenerators.allStrategies
-
     private val structuralStrategies = RuleGenerators.structuralStrategies
     private val creativeStrategies = RuleGenerators.creativeStrategies
+    private val replacementStrategies = ReplacementStrategies.allStrategies
+
+    /**
+     * Applies random replacement rule transformations to a set of formulas within a [GenerationStep].
+     *
+     * This function iterates through the `nextGoals` and `newPremises` of the input `step`.
+     * For each formula, there's a chance (currently 25%) that a randomly selected,
+     * applicable replacement strategy from `availableStrategies` will be used to transform it.
+     * If a transformation occurs, one of the possible outcomes from the strategy is chosen
+     * randomly. If no strategy applies or the random chance is not met, the original formula
+     * is retained.
+     *
+     * This is used to introduce variety and potentially simplify or obfuscate parts of
+     * a generated proof by applying equivalence rules (e.g., De Morgan's, Implication,
+     * Double Negation) during the problem generation process.
+     *
+     * @param step The [GenerationStep] containing the formulas (`nextGoals` and `newPremises`)
+     *             to potentially transform.
+     * @param availableStrategies A list of [GenerationStrategy] instances representing
+     *                            replacement rules that can be applied.
+     * @param applicationThreshold The probability threshold for applying a replacement.  This is
+     *                             a value between 0.0 and 1.0
+     * @return A new [GenerationStep] with potentially transformed `nextGoals` and `newPremises`.
+     *         The `originalGoal` and other properties of the input `step` are preserved.
+     */
+    private fun applyRandomReplacements(
+        step: GenerationStep,
+        availableStrategies: List<GenerationStrategy>,
+        applicationThreshold: Double
+    ): GenerationStep {
+        val transform = { formulas: List<Formula> ->
+            formulas.map { formula ->
+                val transformedFormula = if (Math.random() < applicationThreshold) {
+                    availableStrategies
+                        .filter { it.canApply(formula) }
+                        .randomOrNull() // Returns GenerationStrategy?
+                        ?.let { strategy -> // Executes only if a strategy was found
+                            strategy.generate(formula, mutableListOf())?.nextGoals
+                        } // The result of this 'let' is List<Formula>?
+                        ?.randomOrNull() // Picks a random goal, resulting in Formula?
+                        ?: formula // **This is the key**: If any part of the chain was null, fall back to the original formula
+                } else {
+                    formula // If the initial random check fails
+                }
+
+                return@map transformedFormula
+            }
+        }
+        // Loop through the goals created by the inference step.
+        val transformedGoals = transform(step.nextGoals)
+        val transformedPremises = transform(step.newPremises)
+
+        // Return a new GenerationStep with the same premises but the transformed goals.
+        return step.copy(nextGoals = transformedGoals, newPremises = transformedPremises)
+    }
 
     /**
      * Executes the first phase of problem generation: constructing a complex target conclusion.
@@ -149,14 +203,14 @@ object ProblemGenerator {
         val constructionSteps = stepsBudget
 
         // Start with a base of simple variables.
-        for (i in 0..constructionSteps) {
+        (0..constructionSteps).forEach { i ->
             if (vars.isNotEmpty()) {
                 knownFormulas.add(Formula(listOf(vars.removeAt(0))))
             }
         }
 
         var lastForwardStrategy: ForwardGenerationStrategy? = null
-        for (i in 0 until constructionSteps) {
+        for (i in 1 .. constructionSteps) {
             val possibleStrategies = forwardStrategies.filter { it != lastForwardStrategy }
             if (possibleStrategies.isEmpty()) break
 
@@ -221,8 +275,11 @@ object ProblemGenerator {
                 if (strategy.canApply(currentGoal)) {
                     val step = strategy.generate(currentGoal, vars)
                     if (step != null) {
-                        premises.addAll(step.newPremises)
-                        goalsToSolve.addAll(step.nextGoals)
+                        val transformedStep = applyRandomReplacements(step,
+                                                                      replacementStrategies,
+                                                                      0.25)
+                        premises.addAll(transformedStep.newPremises)
+                        goalsToSolve.addAll(transformedStep.nextGoals)
                         stepsRemaining--
                         stepTaken = true
                         break
@@ -238,8 +295,11 @@ object ProblemGenerator {
                 for (strategy in creativeStrategies.shuffled()) {
                     val step = strategy.generate(currentGoal, vars)
                     if (step != null) {
-                        premises.addAll(step.newPremises)
-                        goalsToSolve.addAll(step.nextGoals)
+                        val transformedStep = applyRandomReplacements(step,
+                                                                      replacementStrategies,
+                                                                      0.75)
+                        premises.addAll(transformedStep.newPremises)
+                        goalsToSolve.addAll(transformedStep.nextGoals)
                         stepsRemaining--
                         stepTaken = true
                         break
@@ -316,15 +376,20 @@ object ProblemGenerator {
         val allVars = variables.shuffled().toMutableList()
 
         // The number of steps in the first phase (goal creation phase) of problem generation.
-        val constructionSteps = (difficulty - 1).coerceAtLeast(1)
+        val constructionSteps = (difficulty - 1).toInt().coerceAtLeast(difficulty)
 
         // The number of steps to use in the second phase of problem generation.
         // This needs to be larger than the difficulty variable as it would otherwise sometimes
         // stop early with complex premises and a simple problem on the hard level.
         val backwardSteps = (difficulty *1.5).toInt().coerceAtLeast(difficulty)
 
-        val finalConclusion = forwardPhase(constructionSteps, allVars)
-        val premises = backwardPhase(finalConclusion, backwardSteps, allVars)
+        val numGoalVars = (constructionSteps + 1).coerceAtMost(allVars.size)
+        val goalVars = allVars.take(numGoalVars).toMutableList()
+        val proofVars = allVars.drop(numGoalVars).toMutableList()
+
+
+        val finalConclusion = forwardPhase(constructionSteps, goalVars)
+        val premises = backwardPhase(finalConclusion, backwardSteps, proofVars)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",

@@ -1,4 +1,4 @@
-// File: logic/FormulaTree.kt
+// File: logic/FormulaNode.kt
 // This file defines the data structures for representing a formula as a syntax tree.
 // This is essential for correctly implementing replacement rules.
 

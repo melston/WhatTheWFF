@@ -23,7 +23,11 @@ object ForwardRuleGenerators {
             val p = formulas[0]
             val q = formulas[1]
             Formula(
-                listOf(AvailableTiles.leftParen) + p.tiles + listOf(AvailableTiles.and) + q.tiles + listOf(AvailableTiles.rightParen)
+                listOf(AvailableTiles.leftParen) +
+                        p.tiles +
+                        listOf(AvailableTiles.and) +
+                        q.tiles +
+                        listOf(AvailableTiles.rightParen)
             )
         }
     }
@@ -36,7 +40,11 @@ object ForwardRuleGenerators {
             val p = formulas[0]
             val q = formulas[1]
             Formula(
-                listOf(AvailableTiles.leftParen) + p.tiles + listOf(AvailableTiles.implies) + q.tiles + listOf(AvailableTiles.rightParen)
+                listOf(AvailableTiles.leftParen) +
+                        p.tiles +
+                        listOf(AvailableTiles.implies) +
+                        q.tiles +
+                        listOf(AvailableTiles.rightParen)
             )
         }
     }
@@ -47,7 +55,8 @@ object ForwardRuleGenerators {
     val negation: ForwardGenerationStrategy = { formulas ->
         if (formulas.isEmpty()) null else {
             val p = formulas[0]
-            Formula(listOf(AvailableTiles.not) + p.tiles)
+            Formula(listOf(AvailableTiles.not) +
+                            p.tiles)
         }
     }
 

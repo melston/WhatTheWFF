@@ -41,7 +41,7 @@ object WffParser {
     private fun parseImplication(state: ParserState): FormulaNode? {
         val left = parseDisjunction(state) ?: return null
         // Use a simple 'if' for right-associativity, not a 'while' loop.
-        if (state.current()?.symbol == implies.symbol || state.current()?.symbol == iff.symbol) {
+        if (state.current()?.let { it == implies } == true || state.current()?.let { it == iff } == true) {
             val op = state.current()!!
             state.advance()
             // Recurse on parseImplication itself for the right-hand side.
@@ -54,7 +54,7 @@ object WffParser {
     // Handles '∨' (left-associative)
     private fun parseDisjunction(state: ParserState): FormulaNode? {
         var left = parseConjunction(state) ?: return null
-        while (state.current()?.symbol == or.symbol) {
+        while (state.current()?.let { it == or } == true) {
             val op = state.current()!!
             state.advance()
             val right = parseConjunction(state) ?: return null
@@ -66,7 +66,7 @@ object WffParser {
     // Handles '∧' (left-associative)
     private fun parseConjunction(state: ParserState): FormulaNode? {
         var left = parseFactor(state) ?: return null
-        while (state.current()?.symbol == and.symbol) {
+        while (state.current()?.let { it == and } == true) {
             val op = state.current()!!
             state.advance()
             val right = parseFactor(state) ?: return null
