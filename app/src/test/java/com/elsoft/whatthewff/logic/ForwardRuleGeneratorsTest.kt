@@ -17,8 +17,11 @@ class ForwardRuleGeneratorsTest {
 
     @Test
     fun `conjunction canApply is correct`() {
-        assertTrue("Conjunction should apply with 2 formulas", ForwardRuleGenerators.conjunction.canApply(listOf(f("p"), f("q"))))
-        assertFalse("Conjunction should not apply with 1 formula", ForwardRuleGenerators.conjunction.canApply(listOf(f("p"))))
+        assertTrue("Conjunction should apply with 2 formulas",
+                   ForwardRuleGenerators.conjunction.canApply(listOf(f("p"),
+                                                                     f("q"))))
+        assertFalse("Conjunction should not apply with 1 formula",
+                    ForwardRuleGenerators.conjunction.canApply(listOf(f("p"))))
     }
 
     @Test
@@ -26,17 +29,25 @@ class ForwardRuleGeneratorsTest {
         val known = listOf(f("p"), f("q"))
         val step = ForwardRuleGenerators.conjunction.generate(known)
         assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be Conj.", "Conj.", step!!.justification)
+        assertEquals("Justification should be Conj.",
+                     "Conj.", step!!.justification)
         // The result could be (p∧q) or (q∧p)
         val possibleOutcomes = setOf("(p∧q)", "(q∧p)")
-        assertTrue("Result formula is not a valid conjunction", possibleOutcomes.contains(step.formula.stringValue))
+        assertTrue("Result formula is not a valid conjunction",
+                   possibleOutcomes.contains(step.formula.stringValue))
     }
 
     @Test
     fun `modusPonens canApply is correct`() {
-        assertTrue("MP should apply when premises exist", ForwardRuleGenerators.modusPonens.canApply(listOf(f("(p→q)"), f("p"))))
-        assertFalse("MP should not apply without antecedent", ForwardRuleGenerators.modusPonens.canApply(listOf(f("(p→q)"), f("r"))))
-        assertFalse("MP should not apply without implication", ForwardRuleGenerators.modusPonens.canApply(listOf(f("q"), f("p"))))
+        assertTrue("MP should apply when premises exist",
+                   ForwardRuleGenerators.modusPonens.canApply(listOf(f("(p→q)"),
+                                                                     f("p"))))
+        assertFalse("MP should not apply without antecedent",
+                    ForwardRuleGenerators.modusPonens.canApply(listOf(f("(p→q)"),
+                                                                      f("r"))))
+        assertFalse("MP should not apply without implication",
+                    ForwardRuleGenerators.modusPonens.canApply(listOf(f("q"),
+                                                                      f("p"))))
     }
 
     @Test
@@ -44,14 +55,20 @@ class ForwardRuleGeneratorsTest {
         val known = listOf(f("(p→q)"), f("p"))
         val step = ForwardRuleGenerators.modusPonens.generate(known)
         assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be MP", "MP", step!!.justification)
-        assertEquals("Result should be the consequent 'q'", "q", step.formula.stringValue)
+        assertEquals("Justification should be MP",
+                     "MP", step!!.justification)
+        assertEquals("Result should be the consequent 'q'",
+                     "q", step.formula.stringValue)
     }
 
     @Test
     fun `modusTollens canApply is correct`() {
-        assertTrue("MT should apply when premises exist", ForwardRuleGenerators.modusTollens.canApply(listOf(f("(p→q)"), f("¬q"))))
-        assertFalse("MT should not apply without negated consequent", ForwardRuleGenerators.modusTollens.canApply(listOf(f("(p→q)"), f("q"))))
+        assertTrue("MT should apply when premises exist",
+                   ForwardRuleGenerators.modusTollens.canApply(listOf(f("(p→q)"),
+                                                                      f("¬q"))))
+        assertFalse("MT should not apply without negated consequent",
+                    ForwardRuleGenerators.modusTollens.canApply(listOf(f("(p→q)"),
+                                                                       f("q"))))
     }
 
     @Test
@@ -59,14 +76,20 @@ class ForwardRuleGeneratorsTest {
         val known = listOf(f("(p→q)"), f("¬q"))
         val step = ForwardRuleGenerators.modusTollens.generate(known)
         assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be MT", "MT", step!!.justification)
-        assertEquals("Result should be the negated antecedent '¬p'", "¬p", step.formula.stringValue)
+        assertEquals("Justification should be MT",
+                     "MT", step!!.justification)
+        assertEquals("Result should be the negated antecedent '¬p'",
+                     "¬p", step.formula.stringValue)
     }
 
     @Test
     fun `hypotheticalSyllogism canApply is correct`() {
-        assertTrue("HS should apply when premises exist", ForwardRuleGenerators.hypotheticalSyllogism.canApply(listOf(f("(p→q)"), f("(q→r)"))))
-        assertFalse("HS should not apply without a valid chain", ForwardRuleGenerators.hypotheticalSyllogism.canApply(listOf(f("(p→q)"), f("(r→s)"))))
+        assertTrue("HS should apply when premises exist",
+                   ForwardRuleGenerators.hypotheticalSyllogism.canApply(listOf(f("(p→q)"),
+                                                                               f("(q→r)"))))
+        assertFalse("HS should not apply without a valid chain",
+                    ForwardRuleGenerators.hypotheticalSyllogism.canApply(listOf(f("(p→q)"),
+                                                                                f("(r→s)"))))
     }
 
     @Test
@@ -74,15 +97,23 @@ class ForwardRuleGeneratorsTest {
         val known = listOf(f("(p→q)"), f("(q→r)"))
         val step = ForwardRuleGenerators.hypotheticalSyllogism.generate(known)
         assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be HS", "HS", step!!.justification)
-        assertEquals("Result should be the chained implication '(p→r)'", "(p→r)", step.formula.stringValue)
+        assertEquals("Justification should be HS",
+                     "HS", step!!.justification)
+        assertEquals("Result should be the chained implication '(p→r)'",
+                     "(p→r)", step.formula.stringValue)
     }
 
     @Test
     fun `disjunctiveSyllogism canApply is correct`() {
-        assertTrue("DS should apply with (p∨q) and ¬p", ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"), f("¬p"))))
-        assertTrue("DS should apply with (p∨q) and ¬q", ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"), f("¬q"))))
-        assertFalse("DS should not apply without negation", ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"), f("p"))))
+        assertTrue("DS should apply with (p∨q) and ¬p",
+                   ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"),
+                                                                              f("¬p"))))
+        assertTrue("DS should apply with (p∨q) and ¬q",
+                   ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"),
+                                                                              f("¬q"))))
+        assertFalse("DS should not apply without negation",
+                    ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"),
+                                                                               f("p"))))
     }
 
     @Test
@@ -90,18 +121,22 @@ class ForwardRuleGeneratorsTest {
         val known1 = listOf(f("(p∨q)"), f("¬p"))
         val step1 = ForwardRuleGenerators.disjunctiveSyllogism.generate(known1)
         assertNotNull("Generate should produce a step", step1)
-        assertEquals("Result of (p∨q), ¬p should be q", "q", step1!!.formula.stringValue)
+        assertEquals("Result of (p∨q), ¬p should be q",
+                     "q", step1!!.formula.stringValue)
 
         val known2 = listOf(f("(p∨q)"), f("¬q"))
         val step2 = ForwardRuleGenerators.disjunctiveSyllogism.generate(known2)
         assertNotNull("Generate should produce a step", step2)
-        assertEquals("Result of (p∨q), ¬q should be p", "p", step2!!.formula.stringValue)
+        assertEquals("Result of (p∨q), ¬q should be p",
+                     "p", step2!!.formula.stringValue)
     }
 
     @Test
     fun `simplification canApply is correct`() {
-        assertTrue("Simplification should apply when a conjunction exists", ForwardRuleGenerators.simplification.canApply(listOf(f("(p∧q)"))))
-        assertFalse("Simplification should not apply without a conjunction", ForwardRuleGenerators.simplification.canApply(listOf(f("(p∨q)"))))
+        assertTrue("Simplification should apply when a conjunction exists",
+                   ForwardRuleGenerators.simplification.canApply(listOf(f("(p∧q)"))))
+        assertFalse("Simplification should not apply without a conjunction",
+                    ForwardRuleGenerators.simplification.canApply(listOf(f("(p∨q)"))))
     }
 
     @Test
@@ -110,13 +145,17 @@ class ForwardRuleGeneratorsTest {
         val step = ForwardRuleGenerators.simplification.generate(known)
         assertNotNull("Generate should produce a step", step)
         val possibleOutcomes = setOf("p", "q")
-        assertTrue("Result must be one of the conjuncts", possibleOutcomes.contains(step!!.formula.stringValue))
+        assertTrue("Result must be one of the conjuncts",
+                   possibleOutcomes.contains(step!!.formula.stringValue))
     }
 
     @Test
     fun `addition canApply is correct`() {
-        assertTrue("Addition should apply with 2 formulas", ForwardRuleGenerators.addition.canApply(listOf(f("p"), f("q"))))
-        assertFalse("Addition should not apply with 1 formula", ForwardRuleGenerators.addition.canApply(listOf(f("p"))))
+        assertTrue("Addition should apply with 2 formulas",
+                   ForwardRuleGenerators.addition.canApply(listOf(f("p"),
+                                                                  f("q"))))
+        assertFalse("Addition should not apply with 1 formula",
+                    ForwardRuleGenerators.addition.canApply(listOf(f("p"))))
     }
 
     @Test
@@ -125,7 +164,11 @@ class ForwardRuleGeneratorsTest {
         val step = ForwardRuleGenerators.addition.generate(known)
         assertNotNull("Generate should produce a step", step)
         val possibleOutcomes = setOf("(p∨q)", "(q∨p)")
-        assertTrue("Result formula is not a valid disjunction", possibleOutcomes.contains(step!!.formula.stringValue))
-        assertTrue("Premise for addition must be one of the disjuncts", step.premises.size == 1 && (step.premises[0] == f("p") || step.premises[0] == f("q")))
+        assertTrue("Result formula is not a valid disjunction",
+                   possibleOutcomes.contains(step!!.formula.stringValue))
+        assertTrue("Premise for addition must be one of the disjuncts",
+                   step.premises.size == 1 &&
+                           (step.premises[0] == f("p") ||
+                                   step.premises[0] == f("q")))
     }
 }
