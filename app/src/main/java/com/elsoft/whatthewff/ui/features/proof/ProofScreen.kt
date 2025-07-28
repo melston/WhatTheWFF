@@ -433,6 +433,28 @@ fun ProofScreen(
                                         currentFormula = Formula(emptyList())
                                         isFabMenuExpanded = false
                                   })
+
+                        FabAction(text = "Reiterate",
+                                  icon = Icons.Default.Repeat,
+                                  enabled = currentDepth > 0 && selectedLines.size == 1,
+                                  onClick = {
+                                        val lineToReiterateNum = selectedLines.first()
+                                        val lineToReiterate = proof.lines.find { it.lineNumber == lineToReiterateNum }
+                                        if (lineToReiterate != null && lineToReiterate.depth < currentDepth) {
+                                            val newLine = ProofLine(
+                                                lineNumber = proof.lines.size + 1,
+                                                formula = lineToReiterate.formula,
+                                                justification = Justification.Reiteration(lineToReiterateNum),
+                                                depth = currentDepth
+                                            )
+                                            proof = Proof(proof.lines + newLine)
+                                            selectedLines = emptySet()
+                                            isFabMenuExpanded = false
+                                        } else {
+                                            feedbackMessage = "Can only reiterate a single selected line from an outer scope."
+                                        }
+                                  })
+
                         FabAction(text = "Start Sub-proof",
                                   // TODO: Create string resource for this
                                   icon = Icons.Default.LibraryAdd,

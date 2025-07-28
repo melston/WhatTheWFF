@@ -42,6 +42,7 @@ object ProofValidator {
             val justificationResult = when (line.justification) {
                 is Justification.Premise -> ValidationResult(true) // Premises are assumed valid.
                 is Justification.Assumption -> ValidationResult(true) // Assumptions are assumed valid.
+                is Justification.Reiteration -> validateReiteration(currentTree, line.justification, proof, line.lineNumber, line.depth)
                 is Justification.Inference -> validateInference(currentTree, line.justification, provenTrees, line.lineNumber)
                 is Justification.Replacement -> validateReplacement(currentTree, line.justification, provenTrees, line.lineNumber)
                 is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, line.justification, proof, line.lineNumber)
@@ -55,6 +56,32 @@ object ProofValidator {
             provenTrees[line.lineNumber] = currentTree
         }
         return ValidationResult(true, "Proof is valid!")
+    }
+
+    private fun validateReiteration(
+        currentTree: FormulaNode,
+        justification: Justification.Reiteration,
+        fullProof: Proof,
+        currentLineNumber: Int,
+        currentDepth: Int
+    ): ValidationResult {
+        // Does the referenced line exist?
+        val referencedLine = fullProof.lines.find { it.lineNumber == justification.lineReference }
+            ?: return ValidationResult(false, "Line $currentLineNumber: Reiteration references non-existent line ${justification.lineReference}.")
+
+        // Check 1: The formulas must match.
+        val referencedTree = WffParser.parse(referencedLine.formula)
+        if (currentTree != referencedTree) {
+            return ValidationResult(false, "Line $currentLineNumber: Formula does not match the formula on line ${justification.lineReference}.")
+        }
+
+        // Check 2: The referenced line must be in an accessible scope.
+        // Its depth must be less than or equal to the current line's depth.
+        if (referencedLine.depth > currentDepth) {
+            return ValidationResult(false, "Line $currentLineNumber: Cannot reiterate line ${justification.lineReference} from within a closed sub-proof.")
+        }
+
+        return ValidationResult(true)
     }
 
     /**

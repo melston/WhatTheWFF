@@ -4,62 +4,361 @@
 
 package com.elsoft.whatthewff.logic
 
-/**
- * Defines the "shape" of a function that can take one or more existing formulas
- * and combine them to produce a new, more complex formula.
- */
-typealias ForwardGenerationStrategy = (formulas: List<Formula>) -> Formula?
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.or
 
 /**
  * This object contains the specific strategies for building complex goals.
  */
 object ForwardRuleGenerators {
 
+    val implicationIntroduction = ForwardRule(
+        name = "Implication Introduction",
+        canApply = { it.size >= 2 },
+        generate = { knownFormulas ->
+            val (p, q) = knownFormulas.shuffled().take(2)
+            ProofStep(fImplies(p, q), "II", listOf(p, q)) // Simplified justification
+        }
+    )
+
     /**
      * A strategy that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
      */
-    val conjunction: ForwardGenerationStrategy = { formulas ->
-        if (formulas.size < 2) null else {
-            val p = formulas[0]
-            val q = formulas[1]
-            Formula(
-                listOf(AvailableTiles.leftParen) +
-                        p.tiles +
-                        listOf(AvailableTiles.and) +
-                        q.tiles +
-                        listOf(AvailableTiles.rightParen)
-            )
+    val conjunction = ForwardRule(
+        name = "Conjunction",
+        canApply = { it.size >= 2 },
+        generate = { knownFormulas ->
+            val (p, q) = knownFormulas.shuffled().take(2)
+            ProofStep(fAnd(p, q), "Conj.", listOf(p, q))
+        }
+    )
+
+    val modusPonens = ForwardRule(
+        name = "Modus Ponens",
+        canApply = { knownFormulas -> findAllModusPonensPairs(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllModusPonensPairs(knownFormulas).randomOrNull()?.let { (implication, antecedent) ->
+                val consequent =
+                    treeToFormula((WffParser.parse(implication) as FormulaNode.BinaryOpNode).right)
+                ProofStep(consequent, "MP", listOf(implication, antecedent))
+            }
+        }
+    )
+
+    val modusTollens = ForwardRule(
+        name = "Modus Tollens",
+        canApply = { knownFormulas -> findAllModusTollensPairs(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllModusTollensPairs(knownFormulas).randomOrNull()?.let { (implication, negConsequent) ->
+                val antecedent =
+                    treeToFormula((WffParser.parse(implication) as FormulaNode.BinaryOpNode).left)
+                val negAntecedent = fNeg(antecedent)
+                ProofStep(negAntecedent, "MT", listOf(implication, negConsequent))
+            }
+        }
+    )
+
+    val hypotheticalSyllogism = ForwardRule(
+        name = "Hypothetical Syllogism",
+        canApply = { knownFormulas -> findAllHypotheticalSyllogismPairs(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllHypotheticalSyllogismPairs(knownFormulas).randomOrNull()?.let { (imp1, imp2, _) ->
+                val pNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).left
+                val rNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
+                val pFormula = treeToFormula(pNode)
+                val rFormula = treeToFormula(rNode)
+                val newImplication = fImplies(pFormula, rFormula)
+                ProofStep(newImplication, "HS", listOf(imp1, imp2))
+            }
+        }
+    )
+
+    val disjunctiveSyllogism = ForwardRule(
+        name = "Disjunctive Syllogism",
+        canApply = { knownFormulas -> findAllDisjunctiveSyllogismPairs(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllDisjunctiveSyllogismPairs(knownFormulas).randomOrNull()?.let { (disjunction, negation) ->
+                val disNode = WffParser.parse(disjunction) as FormulaNode.BinaryOpNode
+                // negation contains the operator and the negated formula.  We will need to see if
+                // the negated formula is the same as either of the disjuncts.  So we have to
+                // parse the formula to get to the child node, then turn that into a formula.
+                val negNode = WffParser.parse(negation) as FormulaNode.UnaryOpNode
+                val childFormula = treeToFormula(negNode.child)
+
+                val pFormula = treeToFormula(disNode.left)
+                val qFormula = treeToFormula(disNode.right)
+
+                val conclusion = if (childFormula == pFormula) {
+                    qFormula // (P ∨ Q), ¬P |- Q
+                } else {
+                    pFormula // (P ∨ Q), ¬Q |- P
+                }
+                ProofStep(conclusion, "DS", listOf(disjunction, negation))
+            }
+        }
+    )
+
+    val constructiveDilemma = ForwardRule(
+        name = "Constructive Dilemma",
+        canApply = { knownFormulas -> findAllConstructiveDilemmaPairs(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllConstructiveDilemmaPairs(knownFormulas).randomOrNull()?.let { (imp1, imp2, dis) ->
+                val qNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).right
+                val sNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
+                val qFormula = treeToFormula(qNode)
+                val sFormula = treeToFormula(sNode)
+                val conclusion = fOr(qFormula, sFormula)
+                ProofStep(conclusion, "CD", listOf(imp1, imp2, dis))
+            }
+        }
+    )
+
+    val absorption = ForwardRule(
+        name = "Absorption",
+        canApply = { knownFormulas -> findAllAbsorptionPairs(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllAbsorptionPairs(knownFormulas).randomOrNull()?.let { premise ->
+                val pNode = (WffParser.parse(premise) as FormulaNode.BinaryOpNode).left
+                val qNode = (WffParser.parse(premise) as FormulaNode.BinaryOpNode).right
+                val pFormula = treeToFormula(pNode)
+                val qFormula = treeToFormula(qNode)
+
+                val pAndQ = fAnd(pFormula, qFormula)
+                val conclusion = fImplies(pFormula, pAndQ)
+
+                ProofStep(conclusion, "Abs.", listOf(premise))
+            }
+        }
+    )
+
+    val simplification = ForwardRule(
+        name = "Simplification",
+        canApply = { knownFormulas -> findAllConjunctions(knownFormulas).isNotEmpty() },
+        generate = { knownFormulas ->
+            findAllConjunctions(knownFormulas).randomOrNull()?.let { premise ->
+                val node = WffParser.parse(premise) as FormulaNode.BinaryOpNode
+                // Randomly choose to conclude the left or right side
+                val conclusionNode = if (Math.random() > 0.5) node.left else node.right
+                val conclusion = treeToFormula(conclusionNode)
+                ProofStep(conclusion, "Simp.", listOf(premise))
+            }
+        }
+    )
+
+    val addition = ForwardRule(
+        name = "Addition",
+        canApply = { it.size >= 2 }, // Needs at least two formulas to pick from for P and Q
+        generate = { knownFormulas ->
+            // The rule is P |- (P ∨ Q). We need a P and we need to invent a Q.
+            // For simplicity, we'll pick both P and Q from the known formulas.
+            val (p, q) = knownFormulas.shuffled().take(2)
+            val conclusion = fOr(p, q)
+            ProofStep(conclusion, "Add.", listOf(p))
+        }
+    )
+
+    val allStrategies = listOf(modusPonens, modusTollens, conjunction, implicationIntroduction,
+                               hypotheticalSyllogism, disjunctiveSyllogism, constructiveDilemma,
+                               absorption, simplification, addition)
+
+    ////////////// HELPER FUNCTIONS //////////////
+
+    /**
+     * Function used in MP to find all formulas in the known formulas list that are implications and
+     * have the antecedent in the known formulas list.
+     */
+    private fun findAllModusPonensPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
+        val pairs = mutableListOf<Pair<Formula, Formula>>()
+        val implications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
+        }
+        for (imp in implications) {
+            val antecedent = treeToFormula((WffParser.parse(imp) as FormulaNode.BinaryOpNode).left)
+            if (knownFormulas.contains(antecedent)) {
+                pairs.add(Pair(imp, antecedent))
+            }
+        }
+        return pairs
+    }
+
+    /**
+     * Function used in MT to find all formulas in the known formulas list that are implications
+     * and have the negation of the consequent in the known formulas list.
+     */
+    private fun findAllModusTollensPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
+        val pairs = mutableListOf<Pair<Formula, Formula>>()
+        val implications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
+        }
+        for (imp in implications) {
+            val consequent = treeToFormula((WffParser.parse(imp) as FormulaNode.BinaryOpNode).right)
+            val negConsequent = fNeg(consequent)
+            if (knownFormulas.contains(negConsequent)) {
+                pairs.add(Pair(imp, negConsequent))
+            }
+        }
+        return pairs
+    }
+
+    /**
+     * Function used in HS to find all formulas in the known formulas list that are implications
+     * whose consequent is the same as the antecedent of another implication also in the known
+     * formulas list.
+     */
+    private fun findAllHypotheticalSyllogismPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
+        val pairs = mutableListOf<Triple<Formula, Formula, Formula>>()
+        val implications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
+        }
+        for (imp1 in implications) {
+            val qNode1 = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).right
+            val qFormula1 = treeToFormula(qNode1)
+            for (imp2 in implications) {
+                if (imp1 == imp2) continue
+                val pNode2 = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).left
+                val pFormula2 = treeToFormula(pNode2)
+                if (qFormula1 == pFormula2) {
+                    pairs.add(Triple(imp1, imp2, qFormula1)) // Returns (P→Q), (Q→R), Q
+                }
+            }
+        }
+        return pairs
+    }
+
+    /**
+     * Function used in DS to find all formulas in the known formulas list that are disjunctions
+     * and have the negation of one of the disjuncts in the known formulas list.
+     */
+    private fun findAllDisjunctiveSyllogismPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
+        val pairs = mutableListOf<Pair<Formula, Formula>>()
+        val disjunctions = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "∨" } ?: false
+        }
+        for (dis in disjunctions) {
+            val pNode = (WffParser.parse(dis) as FormulaNode.BinaryOpNode).left
+            val qNode = (WffParser.parse(dis) as FormulaNode.BinaryOpNode).right
+            val pFormula = treeToFormula(pNode)
+            val qFormula = treeToFormula(qNode)
+
+            val negP = fNeg(pFormula)
+            val negQ = fNeg(qFormula)
+
+            if (knownFormulas.contains(negP)) {
+                pairs.add(Pair(dis, negP))
+            }
+            if (knownFormulas.contains(negQ)) {
+                pairs.add(Pair(dis, negQ))
+            }
+        }
+        return pairs
+    }
+
+    /**
+     * Function used in CD to find all possible combinations of formulas from the known formulas
+     * list that are pairs of implications: (p → q), (r → s) where the disjunction of the
+     * antecedents (p ∨ r) are also in the list.
+     */
+    private fun findAllConstructiveDilemmaPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
+        val triples = mutableListOf<Triple<Formula, Formula, Formula>>()
+        val implications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
+        }
+        val disjunctions = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == or } ?: false
+        }
+
+        for (imp1 in implications) {
+            for (imp2 in implications) {
+                if (imp1 == imp2) continue
+
+                val pNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).left
+                val rNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).left
+                val antecedent1 = treeToFormula(pNode)
+                val antecedent2 = treeToFormula(rNode)
+
+                for (dis in disjunctions) {
+                    val disNode = WffParser.parse(dis) as FormulaNode.BinaryOpNode
+                    val disLeft = treeToFormula(disNode.left)
+                    val disRight = treeToFormula(disNode.right)
+
+                    if ((disLeft == antecedent1 && disRight == antecedent2) || (disLeft == antecedent2 && disRight == antecedent1)) {
+                        triples.add(Triple(imp1, imp2, dis))
+                    }
+                }
+            }
+        }
+        return triples
+    }
+
+    /**
+     * Function used in Abs to find all formulas in the known formulas list that are implications.
+     * This is the only requirement for Absorption.
+     */
+    private fun findAllAbsorptionPairs(knownFormulas: List<Formula>): List<Formula> {
+        return knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
         }
     }
 
     /**
-     * A strategy that takes two formulas (P, Q) and combines them into an implication (P → Q).
+     * Function used in Simp to find all formulas in the known formulas list that are conjunctions.
+     * This is the only requirement for Simplification..
      */
-    val implication: ForwardGenerationStrategy = { formulas ->
-        if (formulas.size < 2) null else {
-            val p = formulas[0]
-            val q = formulas[1]
-            Formula(
-                listOf(AvailableTiles.leftParen) +
-                        p.tiles +
-                        listOf(AvailableTiles.implies) +
-                        q.tiles +
-                        listOf(AvailableTiles.rightParen)
-            )
+    private fun findAllConjunctions(knownFormulas: List<Formula>): List<Formula> {
+        return knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == and } ?: false
         }
+    }
+
+    ///////////////// Formula building helpers ///////////////////////////////
+
+    /**
+     * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
+     */
+    private fun fAnd (f1: Formula, f2: Formula): Formula {
+        return Formula(
+            listOf(AvailableTiles.leftParen) +
+                    f1.tiles +
+                    listOf(AvailableTiles.and) +
+                    f2.tiles +
+                    listOf(AvailableTiles.rightParen)
+        )
     }
 
     /**
-     * A strategy that takes one formula (P) and creates its negation (¬P).
+     * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
      */
-    val negation: ForwardGenerationStrategy = { formulas ->
-        if (formulas.isEmpty()) null else {
-            val p = formulas[0]
-            Formula(listOf(AvailableTiles.not) +
-                            p.tiles)
-        }
+    private fun fOr (f1: Formula, f2: Formula): Formula {
+        return Formula(
+            listOf(AvailableTiles.leftParen) +
+                    f1.tiles +
+                    listOf(AvailableTiles.or) +
+                    f2.tiles +
+                    listOf(AvailableTiles.rightParen)
+        )
     }
 
-    // A list of all available forward strategies for the generator to choose from.
-    val allStrategies = listOf(conjunction, implication, negation)
+    /**
+     * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
+     */
+    private fun fImplies (f1: Formula, f2: Formula): Formula {
+        return Formula(
+            listOf(AvailableTiles.leftParen) +
+                    f1.tiles +
+                    listOf(AvailableTiles.implies) +
+                    f2.tiles +
+                    listOf(AvailableTiles.rightParen)
+        )
+    }
+
+    /**
+     * A function that takes one formula (P) and creates its negation (¬P).
+     */
+    private fun fNeg (f1: Formula): Formula {
+        return Formula(
+            listOf(AvailableTiles.not) + f1.tiles
+        )
+    }
+
 }

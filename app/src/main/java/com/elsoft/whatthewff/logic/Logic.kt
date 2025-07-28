@@ -130,7 +130,8 @@ sealed class Justification {
             is Assumption -> "Assumption"
             is Inference   -> "${lineReferences.joinToString(separator = ",")}: ${rule.abbreviation}"
             is Replacement -> "${lineReference}: ${rule.abbreviation}"
-            is ImplicationIntroduction -> "II ${subproofStart}-${subproofEnd}"
+            is ImplicationIntroduction -> "${subproofStart}-${subproofEnd} II"
+            is Reiteration -> "${lineReference}: Reit."
         }
     }
 
@@ -150,6 +151,8 @@ sealed class Justification {
         val rule: ReplacementRule,
         val lineReference: Int // The line numbers this rule applies to
     ) : Justification()
+
+    data class Reiteration(val lineReference: Int) : Justification()
 
     // A justification for concluding an implication after a sub-proof is complete.
     data class ImplicationIntroduction(val subproofStart: Int, val subproofEnd: Int) : Justification()

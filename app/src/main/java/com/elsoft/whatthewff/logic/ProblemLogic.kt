@@ -4,9 +4,6 @@
 
 package com.elsoft.whatthewff.logic
 
-import android.os.Build
-import androidx.annotation.RequiresApi
-
 //import com.elsoft.whatthewff.logic.AvailableTiles.implies
 //import com.elsoft.whatthewff.logic.AvailableTiles.or
 //import com.elsoft.whatthewff.logic.AvailableTiles.and
@@ -107,289 +104,82 @@ object ProblemSets {
 }
 
 /**
- * Generates new logic problems procedurally by building up a final conclusion (based on difficulty
- * level chosen) and then working backward to create the initial premises.
+ * Generates new logic problems procedurally using a "Proof-First" approach.
  */
 object ProblemGenerator {
 
     private val variables = AvailableTiles.variables
-    private val forwardStrategies = ForwardRuleGenerators.allStrategies
-    private val structuralStrategies = RuleGenerators.structuralStrategies
-    private val creativeStrategies = RuleGenerators.creativeStrategies
-    private val replacementStrategies = ReplacementStrategies.allStrategies
 
     /**
-     * Applies random replacement rule transformations to a set of formulas within a [GenerationStep].
-     *
-     * This function iterates through the `nextGoals` and `newPremises` of the input `step`.
-     * For each formula, there's a chance (currently 25%) that a randomly selected,
-     * applicable replacement strategy from `availableStrategies` will be used to transform it.
-     * If a transformation occurs, one of the possible outcomes from the strategy is chosen
-     * randomly. If no strategy applies or the random chance is not met, the original formula
-     * is retained.
-     *
-     * This is used to introduce variety and potentially simplify or obfuscate parts of
-     * a generated proof by applying equivalence rules (e.g., De Morgan's, Implication,
-     * Double Negation) during the problem generation process.
-     *
-     * @param step The [GenerationStep] containing the formulas (`nextGoals` and `newPremises`)
-     *             to potentially transform.
-     * @param availableStrategies A list of [GenerationStrategy] instances representing
-     *                            replacement rules that can be applied.
-     * @param applicationThreshold The probability threshold for applying a replacement.  This is
-     *                             a value between 0.0 and 1.0
-     * @return A new [GenerationStep] with potentially transformed `nextGoals` and `newPremises`.
-     *         The `originalGoal` and other properties of the input `step` are preserved.
+     * Phase 1: Builds a complete, solvable proof in memory.
      */
-    private fun applyRandomReplacements(
-        step: GenerationStep,
-        availableStrategies: List<GenerationStrategy>,
-        applicationThreshold: Double
-    ): GenerationStep {
-        val transform = { formulas: List<Formula> ->
-            formulas.map { formula ->
-                val transformedFormula = if (Math.random() < applicationThreshold) {
-                    availableStrategies
-                        .filter { it.canApply(formula) }
-                        .randomOrNull() // Returns GenerationStrategy?
-                        ?.let { strategy -> // Executes only if a strategy was found
-                            strategy.generate(formula, mutableListOf())?.nextGoals
-                        } // The result of this 'let' is List<Formula>?
-                        ?.randomOrNull() // Picks a random goal, resulting in Formula?
-                        ?: formula // **This is the key**: If any part of the chain was null, fall back to the original formula
+    private fun buildProof(difficulty: Int, availableVars: MutableList<LogicTile>): Pair<List<ProofStep>, List<Formula>> {
+        val proof = mutableListOf<ProofStep>()
+        val basePremises = mutableListOf<Formula>()
+        val numBasePremises = (difficulty / 2).coerceIn(2, 4)
+
+        (1..numBasePremises).forEach { i ->
+            if (availableVars.isNotEmpty()) {
+                val variable = availableVars.removeAt(0)
+                // Randomly decide whether to add the variable or its negation.
+                val premiseFormula = if (Math.random() > 0.5) {
+                    Formula(listOf(variable))
                 } else {
-                    formula // If the initial random check fails
+                    Formula(listOf(AvailableTiles.not, variable))
                 }
-
-                return@map transformedFormula
+                basePremises.add(premiseFormula)
+                proof.add(ProofStep(premiseFormula, "Premise", emptyList()))
             }
         }
-        // Loop through the goals created by the inference step.
-        val transformedGoals = transform(step.nextGoals)
-        val transformedPremises = transform(step.newPremises)
 
-        // Return a new GenerationStep with the same premises but the transformed goals.
-        return step.copy(nextGoals = transformedGoals, newPremises = transformedPremises)
+        val generationSteps = difficulty
+        for (i in 1..generationSteps) {
+            val knownFormulas = proof.map { it.formula }
+
+            val applicableStrategies = ForwardRuleGenerators.allStrategies.filter { it.canApply(knownFormulas) }
+            if (applicableStrategies.isEmpty()) break
+
+            val strategy = applicableStrategies.random()
+            val newStep = strategy.generate(knownFormulas)
+
+            if (newStep != null && !knownFormulas.contains(newStep.formula)) {
+                proof.add(newStep)
+            }
+        }
+        return Pair(proof, basePremises)
     }
 
     /**
-     * Executes the first phase of problem generation: constructing a complex target conclusion.
-     *
-     * This phase aims to create an interesting final conclusion, often an implication,
-     * which might require the user to employ rules like Implication Introduction during proof.
-     * It works by starting with simple formulas (variables) and iteratively applying
-     * forward-generating rules to combine them into more complex structures.
-     *
-     * The number of construction steps is related to the overall desired difficulty, ensuring
-     * the final conclusion has a certain level of complexity before the deconstruction phase begins.
-     *
-     * Available variables are consumed from the `availableVars` list as needed.
-     * The function ensures that at least one construction step is attempted if difficulty allows.
-     *
-     * @param stepsBudget The desired number of construction steps for the target conclusion.
-     *                   Higher numbers generally leads to a more complex conclusion.
-     * @param vars A mutable list of [LogicTile]s representing variables that can be
-     *                      used in the construction. Variables used are removed from this list.
-     * @return The [Formula] representing the complex target conclusion generated in this phase.
-     *         This formula will then be used as the starting point for the backward
-     *         deconstruction phase (Phase 2) to generate the problem's premises.
+     * Phase 2: Selects which lines from the full proof to give to the user as premises.
      */
-    private fun forwardPhase(
-        stepsBudget: Int,
-        vars: MutableList<LogicTile>
-    ): Formula {
-        // Phase 1: Build a complex goal using the new forward strategies.
-        val knownFormulas = mutableSetOf<Formula>()
-        val constructionSteps = stepsBudget
+    private fun selectPremises(fullProof: List<ProofStep>, basePremises: List<Formula>, difficulty: Int): List<Formula> {
+        if (fullProof.isEmpty()) return emptyList()
 
-        // Start with a base of simple variables.
-        (0..constructionSteps).forEach { i ->
-            if (vars.isNotEmpty()) {
-                knownFormulas.add(Formula(listOf(vars.removeAt(0))))
-            }
+        val derivedSteps = fullProof.filter { it.justification != "Premise" }
+        val stepsToHide = difficulty.coerceAtMost(derivedSteps.size)
+        val derivedLinesToKeepCount = derivedSteps.size - stepsToHide
+
+        val finalPremises = basePremises.toMutableList()
+        if (derivedLinesToKeepCount > 0) {
+            finalPremises.addAll(derivedSteps.take(derivedLinesToKeepCount).map { it.formula })
         }
 
-        var lastForwardStrategy: ForwardGenerationStrategy? = null
-        for (i in 1 .. constructionSteps) {
-            val possibleStrategies = forwardStrategies.filter { it != lastForwardStrategy }
-            if (possibleStrategies.isEmpty()) break
-
-            val strategy = possibleStrategies.random()
-
-            val requiredFormulas = if (strategy == ForwardRuleGenerators.negation) 1 else 2
-            if (knownFormulas.size < requiredFormulas) continue
-
-            val sourceFormulas = knownFormulas.shuffled().take(requiredFormulas)
-            val newFormula = strategy(sourceFormulas)
-            if (newFormula != null) {
-                knownFormulas.add(newFormula)
-                lastForwardStrategy = strategy
-            }
-        }
-        return knownFormulas.last()
+        return finalPremises
     }
 
-    /**
-     * Executes the second phase of problem generation: deconstructing the target conclusion into premises.
-     *
-     * This phase starts with the `finalConclusion` (generated by `forwardPhase` or provided)
-     * and works backward, applying inverse rule strategies to break it down into simpler
-     * formulas. These simpler formulas, along with any unresolvable sub-goals, form
-     * the premises of the generated problem.
-     *
-     * The process continues until the `stepsRemaining` (difficulty budget) is exhausted
-     * or no more backward rules can be applied.
-     *
-     * @param finalConclusion The [Formula] that the user will be tasked to prove. This is the
-     *                        starting point for the backward deconstruction.
-     * @param stepsBudget An integer representing the initial steps budget,
-     *                       which corresponds to the number of backward
-     *                       decomposition steps to perform.
-     * @param vars A mutable list of [LogicTile]s representing variables that can be
-     *                      used by strategies if they need to introduce new variables
-     *                      (e.g., for rules like Existential Introduction backwards).
-     *                      Variables used might be consumed from this list.
-     * @return A mutable list of [Formula] objects representing the premises generated
-     *         for the problem. These are the formulas the user will start with.
-     */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    private fun backwardPhase(
-        finalConclusion: Formula,
-        stepsBudget: Int,
-        vars: MutableList<LogicTile>
-    ): MutableList<Formula> {
-        var stepsRemaining = stepsBudget
-        val goalsToSolve = mutableListOf(finalConclusion)
-        val premises = mutableListOf<Formula>()
-
-        while (goalsToSolve.isNotEmpty() && stepsRemaining > 0) {
-            val currentGoal = goalsToSolve.removeFirst()
-
-            var stepTaken = false
-
-            // Prioritize structural strategies that match the goal's shape.
-            // These strategies deconstruct a complex goal based on its main
-            // operator (e.g., Conjunction, Hypothetical Syllogism). They are
-            // the most logical choice when a goal is complex
-            for (strategy in structuralStrategies.shuffled()) {
-                if (strategy.canApply(currentGoal)) {
-                    val step = strategy.generate(currentGoal, vars)
-                    if (step != null) {
-                        val transformedStep = applyRandomReplacements(step,
-                                                                      replacementStrategies,
-                                                                      0.25)
-                        premises.addAll(transformedStep.newPremises)
-                        goalsToSolve.addAll(transformedStep.nextGoals)
-                        stepsRemaining--
-                        stepTaken = true
-                        break
-                    }
-                }
-            }
-
-            // If no structural strategy matched, fall back to the creative strategies
-            // These are rules that add a new layer of complexity to a simpler
-            // goal (e.g., Modus Ponens, Disjunctive Syllogism). They are best used when
-            // the goal is a simple variable that can't be deconstructed further.
-            if (!stepTaken) {
-                for (strategy in creativeStrategies.shuffled()) {
-                    val step = strategy.generate(currentGoal, vars)
-                    if (step != null) {
-                        val transformedStep = applyRandomReplacements(step,
-                                                                      replacementStrategies,
-                                                                      0.75)
-                        premises.addAll(transformedStep.newPremises)
-                        goalsToSolve.addAll(transformedStep.nextGoals)
-                        stepsRemaining--
-                        stepTaken = true
-                        break
-                    }
-                }
-            }
-
-            if (!stepTaken) {
-                premises.add(currentGoal)
-            }
-        }
-
-        premises.addAll(goalsToSolve)
-        return premises
-    }
-
-    /**
-     * Generates a new problem of a given difficulty.
-     *
-     * The main generate function is responsible for the structure of the proof.
-     * It decides the chain of variables first (e.g., the goal is r, which will be
-     * derived from q, which will be derived from p).
-     *
-     * The generator takes a goal, finds a strategy to break it down, and addis the new
-     * sub-goals into the list of goals to solve.
-     *
-     * Each strategy is responsible for consuming variables from the single pool of
-     * available variables (availableVars).  If it can't generate a step because the
-     * pool is empty, it simply fails and the generator tries a different strategy.
-     *
-     * TODO: This generator will never produce a compound WFF as a final goal.
-     * This needs to be fixed in the future.  Gemini suggests the following:
-     *
-     * # Phase 1: Goal Construction
-     *
-     * The sole purpose of this phase is to create an interesting finalConclusion that is an
-     * implication. We aren't building the whole proof yet, just the target.
-     *
-     * 1. Start with a few simple formulas (e.g., p, q, r).
-     *
-     * 2. Use our forward-building rules to combine them into a more complex
-     *    formula (e.g., (p ∧ q)).
-     *
-     * 3. Finally, use the forwardImplication rule to create the final goal,
-     *    for example: (r → (p ∧ q)).
-     *
-     * Now we have a goal that requires the user to use Implication Introduction.
-     *
-     * # Phase 2: Premise Deconstruction
-     *
-     * This phase uses the exact same queue-based generator we have now, but it starts with
-     * the complex implication goal we just created.
-     *
-     * 1. The goalsToSolve queue is initialized with our goal: [ (r → (p ∧ q)) ].
-     *
-     * 2. The generator pulls this goal. The hypotheticalSyllogism strategy (or a new, more
-     *    specific "Reverse Implication Introduction" strategy) would apply.
-     *
-     * 3. This strategy would say, "To prove (r → (p ∧ q)), the user needs to assume r and
-     *    derive (p ∧ q)." It would then create a new sub-goal of (p ∧ q).
-     *
-     * 4. The generator would then continue to work backward from (p ∧ q), breaking it down
-     *    further until the difficulty budget is spent.
-     *
-     * This two-phase approach is the key to creating problems that require the full range of
-     * logical rules. It ensures that the generator can create complex, interesting goals and
-     * then build a solvable set of premises for them.
-     *
-     * @param difficulty The desired difficulty, controlling the number of backward steps.
-     * @return A new Problem object.
-     */
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun generate(difficulty: Int): Problem {
-        val allVars = variables.shuffled().toMutableList()
+        val availableVars = variables.shuffled().toMutableList()
 
-        // The number of steps in the first phase (goal creation phase) of problem generation.
-        val constructionSteps = (difficulty - 1).toInt().coerceAtLeast(difficulty)
+        val (fullProof, basePremises) = buildProof(difficulty, availableVars)
+        if (fullProof.isEmpty()) {
+            return Problem("fallback",
+                           "Error", listOf(Formula(listOf(AvailableTiles.p))),
+                           Formula(listOf(AvailableTiles.p)),
+                           1)
+        }
 
-        // The number of steps to use in the second phase of problem generation.
-        // This needs to be larger than the difficulty variable as it would otherwise sometimes
-        // stop early with complex premises and a simple problem on the hard level.
-        val backwardSteps = (difficulty *1.5).toInt().coerceAtLeast(difficulty)
-
-        val numGoalVars = (constructionSteps + 1).coerceAtMost(allVars.size)
-        val goalVars = allVars.take(numGoalVars).toMutableList()
-        val proofVars = allVars.drop(numGoalVars).toMutableList()
-
-
-        val finalConclusion = forwardPhase(constructionSteps, goalVars)
-        val premises = backwardPhase(finalConclusion, backwardSteps, proofVars)
+        val finalConclusion = fullProof.last().formula
+        val premises = selectPremises(fullProof, basePremises, difficulty)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
