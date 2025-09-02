@@ -1,245 +1,488 @@
 // File: ui/features/proof/ProofScreen.kt
-// This file defines the UI for the proof construction screen.
+// This file contains the Jetpack Compose UI for the main proof-building screen,
+// now with full support for sub-proofs, reiteration, and RAA.
 
 package com.elsoft.whatthewff.ui.features.proof
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import com.elsoft.whatthewff.R
+import androidx.compose.ui.unit.sp
 import com.elsoft.whatthewff.logic.*
-import com.elsoft.whatthewff.ui.features.game.ConstructionArea
-import com.elsoft.whatthewff.ui.features.game.SymbolPalette
-import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
+import com.elsoft.whatthewff.logic.ProofValidator
 
-import com.elsoft.whatthewff.logic.AvailableTiles.implies
-import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
-import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
-//import com.elsoft.whatthewff.logic.AvailableTiles.iff
-//import com.elsoft.whatthewff.logic.AvailableTiles.or
-//import com.elsoft.whatthewff.logic.AvailableTiles.and
-//import com.elsoft.whatthewff.logic.AvailableTiles.not
+// --- Main Proof Screen Composable ---
 
-/**
- * Displays a single, formatted line of a proof.
- *
- * @param line The ProofLine to display.
- */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProofScreen(
+    problem: Problem,
+    onBackClicked: () -> Unit
+) {
+    // --- State Management ---
+    var proof by remember { mutableStateOf(Proof(lines = problem.premises.mapIndexed { i, p -> ProofLine(i + 1, p, Justification.Premise) })) }
+    var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
+    var feedbackMessage by remember { mutableStateOf<String?>(null) }
+    var isFabMenuExpanded by remember { mutableStateOf(false) }
+
+    // Sub-proof state
+    var currentDepth by remember { mutableIntStateOf(0) }
+    var subproofStartLines by remember { mutableStateOf(listOf<Int>()) }
+
+    // Selection and Dialog state
+    var selectedLines by remember { mutableStateOf(setOf<Int>()) }
+    var showAddLineDialog by remember { mutableStateOf(false) }
+    var lineToDelete by remember { mutableStateOf<Int?>(null) }
+    val showDeleteDialog = lineToDelete != null
+
+    // --- UI Structure ---
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(problem.name) },
+                navigationIcon = { IconButton(onClick = onBackClicked) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+            )
+        },
+        floatingActionButton = {
+            FabMenu(
+                isExpanded = isFabMenuExpanded,
+                onToggle = { isFabMenuExpanded = !isFabMenuExpanded },
+                onAddPremise = {
+                    val newProofLine = ProofLine(proof.lines.size + 1, currentFormula, Justification.Premise, currentDepth)
+                    proof = Proof(proof.lines + newProofLine)
+                    currentFormula = Formula(emptyList())
+                    isFabMenuExpanded = false
+                },
+                onStartSubproof = {
+                    val assumptionLineNumber = proof.lines.size + 1
+                    val newProofLine = ProofLine(assumptionLineNumber, currentFormula, Justification.Assumption, currentDepth + 1)
+                    proof = Proof(proof.lines + newProofLine)
+                    subproofStartLines = subproofStartLines + assumptionLineNumber
+                    currentDepth++
+                    currentFormula = Formula(emptyList())
+                    isFabMenuExpanded = false
+                },
+                onEndSubproof = {
+                    val startLine = subproofStartLines.last()
+                    val endLine = proof.lines.size
+                    val assumptionLine = proof.lines[startLine - 1]
+                    val conclusionLine = proof.lines.last()
+
+                    val finalFormula: Formula
+                    val justification: Justification
+
+                    // Check if the last line of the sub-proof is a contradiction
+                    val lastLineNode = WffParser.parse(conclusionLine.formula)
+                    val isContradiction = if (lastLineNode is FormulaNode.BinaryOpNode &&
+                                              lastLineNode.operator.symbol == "∧") {
+                        val leftNegatedTree = WffParser.parse(
+                            ForwardRuleGenerators.fNeg(treeToFormula(lastLineNode.left)))
+                        leftNegatedTree == lastLineNode.right
+                    } else {
+                        false
+                    }
+
+                    if (isContradiction) {
+                        // RAA: Conclude the negation of the assumption
+                        finalFormula = ForwardRuleGenerators.fNeg(assumptionLine.formula)
+                        justification = Justification.ReductioAdAbsurdum(startLine, endLine, endLine)
+                    } else {
+                        // II: Conclude the implication
+                        finalFormula = ForwardRuleGenerators.fImplies(assumptionLine.formula, conclusionLine.formula)
+                        justification = Justification.ImplicationIntroduction(startLine, endLine)
+                    }
+
+                    val newProofLine = ProofLine(proof.lines.size + 1, finalFormula, justification, currentDepth - 1)
+                    proof = Proof(proof.lines + newProofLine)
+                    subproofStartLines = subproofStartLines.dropLast(1)
+                    currentDepth--
+                    isFabMenuExpanded = false
+                },
+                onAddDerivedLine = {
+                    showAddLineDialog = true
+                    isFabMenuExpanded = false
+                },
+                onReiterate = {
+                    val lineToReiterate = proof.lines[selectedLines.first() - 1]
+                    val newProofLine = ProofLine(proof.lines.size + 1, lineToReiterate.formula, Justification.Reiteration(lineToReiterate.lineNumber), currentDepth)
+                    proof = Proof(proof.lines + newProofLine)
+                    selectedLines = emptySet()
+                    isFabMenuExpanded = false
+                },
+                isAddPremiseEnabled = currentDepth == 0 && currentFormula.tiles.isNotEmpty(),
+                isStartSubproofEnabled = currentFormula.tiles.isNotEmpty(),
+                isEndSubproofEnabled = currentDepth > 0,
+                isReiterateEnabled = selectedLines.size == 1 && currentDepth > 0 && (proof.lines.getOrNull(
+                    selectedLines.first() - 1
+                )?.depth ?: 0) < currentDepth
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // --- Goal Display ---
+            Text("Goal: ${problem.conclusion}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+
+            // --- Proof Display Area ---
+            Card(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                LazyColumn(
+                    modifier = Modifier.padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    items(proof.lines) { line ->
+                        ProofLineView(
+                            line = line,
+                            isSelected = selectedLines.contains(line.lineNumber),
+                            onLineClicked = {
+                                selectedLines = if (selectedLines.contains(it)) selectedLines - it else selectedLines + it
+                            },
+                            onDeleteClicked = { lineToDelete = it }
+                        )
+                    }
+                }
+            }
+
+            // --- Feedback & Controls ---
+            Spacer(Modifier.height(8.dp))
+            if (feedbackMessage != null) {
+                Text(feedbackMessage ?: "", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 8.dp))
+            }
+
+            ConstructionArea(
+                formula = currentFormula,
+                onDeleteLast = {
+                    if (currentFormula.tiles.isNotEmpty()) {
+                        currentFormula = Formula(currentFormula.tiles.dropLast(1))
+                    }
+                }
+            )
+
+            SymbolPalette(onSymbolClick = {
+                currentFormula = Formula(currentFormula.tiles + it)
+            })
+
+            Button(
+                onClick = {
+                    val result = ProofValidator.validate(proof)
+                    // We do this next to allow for the case where the goal is expressed with
+                    // surrounding parens but the user doesn't include them.  If the two formulas
+                    // are otherwise equal, we consider the proof valid.
+                    val finalLineMatchesGoal = proof.lines.lastOrNull()?.let { lastLine ->
+                        WffParser.parse(lastLine.formula) == WffParser.parse(problem.conclusion)
+                    } ?: false // If there's no last line, it can't match.
+                    feedbackMessage = when {
+                        !result.isValid -> "Error on line ${result.errorLine}: ${result.errorMessage}"
+                        !finalLineMatchesGoal -> "Proof is valid, but does not reach the goal."
+                        else -> "Congratulations! Proof is valid and complete."
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Validate Proof") }
+        }
+
+        // --- Dialogs ---
+        if (showAddLineDialog) {
+            AddLineDialog(
+                onDismiss = { showAddLineDialog = false },
+                onConfirm = { justification ->
+                    val newProofLine = ProofLine(proof.lines.size + 1, currentFormula, justification, currentDepth)
+                    proof = Proof(proof.lines + newProofLine)
+                    currentFormula = Formula(emptyList())
+                    selectedLines = emptySet()
+                    showAddLineDialog = false
+                },
+                initialLines = selectedLines.joinToString(",")
+            )
+        }
+        if (showDeleteDialog) {
+            DeleteConfirmationDialog(
+                onConfirm = {
+                    lineToDelete?.let { lineNum ->
+                        proof = Proof(proof.lines.take(lineNum - 1))
+                        feedbackMessage = "Line $lineNum and subsequent lines deleted."
+                        // Adjust sub-proof state if deletion happened inside one
+                        if (proof.lines.size < (subproofStartLines.lastOrNull() ?: 0)) {
+                            val lastStart = subproofStartLines.last()
+                            subproofStartLines = subproofStartLines.filter { it < lastStart }
+                            currentDepth = subproofStartLines.size
+                        }
+                    }
+                    lineToDelete = null
+                },
+                onDismiss = { lineToDelete = null }
+            )
+        }
+    }
+}
+
+
+// --- UI Sub-components ---
+
+@Composable
+fun FabMenu(
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    onAddPremise: () -> Unit,
+    onStartSubproof: () -> Unit,
+    onEndSubproof: () -> Unit,
+    onAddDerivedLine: () -> Unit,
+    onReiterate: () -> Unit,
+    isAddPremiseEnabled: Boolean,
+    isStartSubproofEnabled: Boolean,
+    isEndSubproofEnabled: Boolean,
+    isReiterateEnabled: Boolean
+) {
+    Column(horizontalAlignment = Alignment.End,
+           verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (isExpanded) {
+            FabMenuItem(icon = Icons.Default.AddCircle,
+                        label = "Add Premise", onClick = onAddPremise, enabled = isAddPremiseEnabled)
+            FabMenuItem(icon = Icons.AutoMirrored.Filled.ArrowForward,
+                        label = "Start Sub-proof", onClick = { onStartSubproof() }, enabled = isStartSubproofEnabled)
+            FabMenuItem(icon = Icons.Default.KeyboardArrowUp,
+                        label = "End Sub-proof", onClick = onEndSubproof, enabled = isEndSubproofEnabled)
+            FabMenuItem(icon = Icons.Default.Replay,
+                        label = "Reiterate", onClick = onReiterate, enabled = isReiterateEnabled)
+            FabMenuItem(icon = Icons.Default.Create,
+                        label = "Add Derived Line", onClick = onAddDerivedLine)
+        }
+        FloatingActionButton(onClick = onToggle) {
+            Icon(
+                if (isExpanded) Icons.Default.Close else Icons.Default.Add,
+                contentDescription = if (isExpanded) "Close Menu" else "Open Menu"
+            )
+        }
+    }
+}
+
+@Composable
+fun FabMenuItem(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Row(verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Card(
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Text(text = label,
+                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                 style = MaterialTheme.typography.labelLarge)
+        }
+        FloatingActionButton(
+            onClick = { if (enabled) onClick() },
+            containerColor = if (enabled) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+            shape = CircleShape,
+            modifier = Modifier.size(56.dp)
+        ) {
+            if (enabled) {
+                Icon(icon, contentDescription = label)
+            } else {
+                Icon(icon, contentDescription = label, tint = Color.Gray)
+            }
+        }
+    }
+}
+
 @Composable
 fun ProofLineView(
     line: ProofLine,
     isSelected: Boolean,
-    onLineClicked: () -> Unit,
-    currentScale: Float,
-    onDelete: () -> Unit
+    onLineClicked: (Int) -> Unit,
+    onDeleteClicked: (Int) -> Unit
 ) {
-    // Define your base font sizes (these could come from MaterialTheme or be custom)
-    val baseNumberFontSize: TextUnit = MaterialTheme.typography.bodyLarge.fontSize
-    val baseFormulaFontSize: TextUnit = MaterialTheme.typography.bodyLarge.fontSize
-    val baseJustificationFontSize: TextUnit = MaterialTheme.typography.bodyMedium.fontSize
+    val backgroundColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val indentSize = (line.depth * 24).dp
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
-            .clickable(onClick = onLineClicked)
-            .then(
-                if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                else Modifier
-            )
-            .padding(start = (line.depth * 24).dp, end = 4.dp),
+            .background(backgroundColor)
+            .clickable { onLineClicked(line.lineNumber) }
+            .padding(start = indentSize, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Vertical line to indicate sub-proof scope
-        if (line.depth > 0) {
-            Box(modifier =
-                    Modifier.width(1.dp)
-                        .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                        .padding(end = 4.dp))
-        }
-        // Line Number Text
         Text(
             text = "${line.lineNumber}.",
-            fontWeight = FontWeight.Bold,
-            fontSize = baseNumberFontSize * currentScale, // <--- ADJUST FONT SIZE
-            modifier = Modifier.padding(end = 8.dp)
+            modifier = Modifier.width(32.dp),
+            fontFamily = FontFamily.Monospace
         )
-
-        // Formula Text
         Text(
             text = line.formula.stringValue,
-            fontSize = baseFormulaFontSize * currentScale, // <--- ADJUST FONT SIZE
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-            // consider maxLines and overflow if text can get very long
+            modifier = Modifier.weight(1f),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 16.sp
         )
-
-        // Justification Text (Example, adjust as per your actual UI)
         Text(
             text = line.justification.displayText(),
-            fontSize = baseJustificationFontSize * currentScale, // <--- ADJUST FONT SIZE
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 8.dp)
+            modifier = Modifier.padding(horizontal = 8.dp),
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodySmall
         )
-
-        // Delete Icon (Icons usually scale differently, often you scale the Modifier.size())
         Box(
             modifier = Modifier
-                .size(32.dp) // A smaller, more reasonable touch target.
-                .clickable(onClick = onDelete),
+                .size(32.dp)
+                .clip(CircleShape)
+                .clickable { onDeleteClicked(line.lineNumber) },
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Filled.Delete,
-                contentDescription = "Delete line ${line.lineNumber}",
-                // TODO: Create string resource for this
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(15.dp * currentScale) // The visible size of the icon itself.
-            )
+            Icon(Icons.Default.Delete, contentDescription = "Delete line", modifier = Modifier.size(18.dp))
         }
     }
 }
 
-/**
- * A dialog to confirm the deletion of a proof line.
- */
 @Composable
-fun DeleteConfirmationDialog(
-    onDismissRequest: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = { Text("Confirm Deletion") },
-        // TODO: Create string resource for this
-        text = { Text("Are you sure you want to delete this line and all subsequent lines? This action cannot be undone.") },
-        // TODO: Create string resource for this
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("Delete")
-                // TODO: Create string resource for this
+fun ConstructionArea(formula: Formula, onDeleteLast: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LazyRow(modifier = Modifier.weight(1f)) {
+                items(formula.tiles) { tile ->
+                    Text(
+                        text = tile.symbol,
+                        fontSize = 18.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    )
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text("Cancel")
-                // TODO: Create string resource for this
+            IconButton(onClick = onDeleteLast) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Delete last symbol")
             }
         }
-    )
+    }
 }
 
-/**
- * A dialog for adding a new line to the proof by specifying its justification.
- *
- * @param onDismissRequest Called when the user wants to close the dialog.
- * @param onConfirm Called when the user confirms the new line, passing the justification.
- */
+@Composable
+fun SymbolPalette(onSymbolClick: (LogicTile) -> Unit) {
+    val variables = AvailableTiles.variables
+    val operators = AvailableTiles.connectors
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally)
+    ) {
+        items(variables) { symbol ->
+            Button(onClick = { onSymbolClick(symbol) }) {
+                Text(symbol.symbol, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally)
+    ) {
+        items(operators) { symbol ->
+            Button(onClick = { onSymbolClick(symbol) }) {
+                Text(symbol.symbol, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddLineDialog(
-    preSelectedLines: Set<Int>,
-    onDismissRequest: () -> Unit,
-    onConfirm: (Justification) -> Unit
+    onDismiss: () -> Unit,
+    onConfirm: (Justification) -> Unit,
+    initialLines: String
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0 for Inference, 1 for Replacement
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var lineRefs by remember { mutableStateOf(initialLines) }
     var selectedInferenceRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
-    var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.DEMORGANS_THEOREM) }
-    var lineRefs by remember { mutableStateOf("") }
-    var isDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.DOUBLE_NEGATION) }
+    var isRuleDropdownExpanded by remember { mutableStateOf(false) }
 
-    val addJustificationLabel = stringResource(id = R.string.add_justification_label)
-    val cancelLabel = stringResource(id = R.string.cancel_label)
-    val confirmLabel = stringResource(id = R.string.confirm_label)
-    val inferenceLabel = stringResource(id = R.string.inference_label)
-    val referenceLineLabel = stringResource(id = R.string.reference_line_label)
-    val referenceLinesLabel = stringResource(id = R.string.reference_lines_label)
-    val replacementLabel = stringResource(id = R.string.replacement_label)
-
-    // Use LaunchedEffect to pre-fill the text field when the dialog opens with selections.
-    LaunchedEffect(preSelectedLines) {
-        if (preSelectedLines.isNotEmpty()) {
-            lineRefs = preSelectedLines.sorted().joinToString(separator = ",")
-        }
+    val lineNumbers = remember(lineRefs) {
+        lineRefs.split(',').mapNotNull { it.trim().toIntOrNull() }
     }
 
-    Dialog(onDismissRequest = onDismissRequest) {
-        Card(shape = RoundedCornerShape(16.dp)) {
-            Column(modifier = Modifier.padding(24.dp),
-                   horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(addJustificationLabel,
-                     style = MaterialTheme.typography.titleLarge)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Derived Line") },
+        text = {
+            Column {
+                TabRow(selectedTabIndex = selectedTabIndex) {
+                    Tab(
+                        selected = selectedTabIndex == 0,
+                        onClick = { selectedTabIndex = 0 },
+                        text = { Text("Inference") }
+                    )
+                    Tab(
+                        selected = selectedTabIndex == 1,
+                        onClick = { selectedTabIndex = 1 },
+                        text = { Text("Replacement") }
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
 
-                TabRow(selectedTabIndex = selectedTab) {
-                    Tab(selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text(inferenceLabel) })
-                    Tab(selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text(replacementLabel) })
-                }
-                Spacer(Modifier.height(24.dp))
+                OutlinedTextField(
+                    value = lineRefs,
+                    onValueChange = { lineRefs = it },
+                    label = { Text("Reference Lines (e.g., 1,2)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                // Dropdown Menu
-                ExposedDropdownMenuBox(expanded = isDropdownExpanded,
-                                       onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }) {
-                    val currentRuleName =
-                        if (selectedTab == 0) selectedInferenceRule.ruleName
-                        else selectedReplacementRule.ruleName
+                Spacer(Modifier.height(8.dp))
 
+                ExposedDropdownMenuBox(
+                    expanded = isRuleDropdownExpanded,
+                    onExpandedChange = { isRuleDropdownExpanded = !isRuleDropdownExpanded }
+                ) {
                     OutlinedTextField(
-                        value = currentRuleName,
+                        value = if (selectedTabIndex == 0) selectedInferenceRule.ruleName else selectedReplacementRule.ruleName,
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Rule") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(type = MenuAnchorType.PrimaryNotEditable)
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isRuleDropdownExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-
-                    ExposedDropdownMenu(expanded = isDropdownExpanded,
-                                        onDismissRequest = { isDropdownExpanded = false }) {
-                        if (selectedTab == 0) {
+                    ExposedDropdownMenu(
+                        expanded = isRuleDropdownExpanded,
+                        onDismissRequest = { isRuleDropdownExpanded = false }
+                    ) {
+                        if (selectedTabIndex == 0) {
                             InferenceRule.entries.forEach { rule ->
                                 DropdownMenuItem(
                                     text = { Text(rule.ruleName) },
                                     onClick = {
                                         selectedInferenceRule = rule
-                                        isDropdownExpanded = false
+                                        isRuleDropdownExpanded = false
                                     }
                                 )
                             }
@@ -249,365 +492,39 @@ fun AddLineDialog(
                                     text = { Text(rule.ruleName) },
                                     onClick = {
                                         selectedReplacementRule = rule
-                                        isDropdownExpanded = false
+                                        isRuleDropdownExpanded = false
                                     }
                                 )
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
-
-                OutlinedTextField(value = lineRefs,
-                                  onValueChange = { lineRefs = it.filter { char -> char.isDigit() || char == ',' } },
-                                  label = { Text(if (selectedTab == 0) referenceLinesLabel else referenceLineLabel) },
-                                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Spacer(Modifier.height(24.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismissRequest) { Text(cancelLabel) }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = {
-                        val justification = if (selectedTab == 0) {
-                            val refs = lineRefs.split(',').mapNotNull { it.trim().toIntOrNull() }
-                            if (refs.isNotEmpty()) Justification.Inference(selectedInferenceRule, refs) else null
-                        } else {
-                            val ref = lineRefs.trim().toIntOrNull()
-                            if (ref != null) Justification.Replacement(selectedReplacementRule, ref) else null
-                        }
-                        justification?.let { onConfirm(it) }
-                    }) { Text(confirmLabel) }
-                }
             }
-        }
-    }
-}
-
-/**
- * A single action item in the expanding Floating Action Button (FAB) menu.
- */
-@Composable
-fun FabAction(
-    text: String,
-    icon: ImageVector,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 6.dp)
-    ) {
-        Card(
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Text(text,
-                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                 style = MaterialTheme.typography.labelLarge)
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        FloatingActionButton(
-            onClick = onClick,
-            modifier = Modifier.size(40.dp),
-            containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-        ) {
-            Icon(icon, contentDescription = text)
-        }
-    }
-}
-
-/**
- * The main screen for building and validating proofs.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ProofScreen(
-    problem: Problem,
-    onBackClicked: () -> Unit
-) {
-
-    // --- STATE MANAGEMENT ---
-    // Initialize the proof with the problem's premises.
-    val initialLines = problem.premises.mapIndexed { index, formula ->
-        ProofLine(index + 1, formula, Justification.Premise)
-    }
-    val addLineMessage = stringResource(id = R.string.add_line_message)
-    val proofClearedMessage = stringResource(id = R.string.proof_cleared_message)
-    val proofCompleteMessage = stringResource(id = R.string.proof_complete_message)
-    val proofIncompleteMessage = stringResource(id = R.string.proof_incomplete_message)
-    val proofUpdatedMessage = stringResource(id = R.string.proof_updated_message)
-    val proofValidMessage = stringResource(id = R.string.proof_valid_message)
-
-    val addLineLabel = stringResource(id = R.string.add_line_label)
-    val addPremiseLabel = stringResource(id = R.string.add_premise_label)
-    val clearProofLabel = stringResource(id = R.string.clear_proof_label)
-    val clearInputLabel = stringResource(id = R.string.clear_input_label)
-    val goalLabel = stringResource(id = R.string.goal_label)
-    val validateProofLabel = stringResource(id = R.string.validate_proof_label)
-
-    var proof by remember { mutableStateOf(Proof(lines = initialLines)) }
-    var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
-    var showAddLineDialog by remember { mutableStateOf(false) }
-    var feedbackMessage by remember { mutableStateOf(addLineMessage) }
-    var selectedLines by remember { mutableStateOf(emptySet<Int>()) }
-    var dialogPreSelectedLines by remember { mutableStateOf(emptySet<Int>()) }
-    var currentDepth by remember { mutableStateOf(0) }
-    var subproofStartLines by remember { mutableStateOf(listOf<Int>()) }
-    var isFabMenuExpanded by remember { mutableStateOf(false) }
-    var lineToDelete by remember { mutableStateOf<ProofLine?>(null) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-
-    val scale = remember { mutableStateOf(1f) }
-
-    val zoomModifier = Modifier.pointerInput(Unit) {
-        detectTransformGestures { _, _, zoom, _ ->
-            scale.value = (scale.value * zoom).coerceIn(0.5f, 3f)  // limit scale range
-        }
-    }
-
-    // --- DIALOG HANDLER ---
-    if (showAddLineDialog) {
-        AddLineDialog(
-            preSelectedLines = dialogPreSelectedLines,
-            onDismissRequest = { showAddLineDialog = false },
-            onConfirm = { justification ->
-                val newProofLine = ProofLine(
-                    lineNumber = proof.lines.size + 1,
-                    formula = currentFormula,
-                    justification = justification,
-                    depth = currentDepth
-                )
-                proof = Proof(proof.lines + newProofLine)
-                currentFormula = Formula(emptyList()) // Clear input field
-                selectedLines = emptySet() // Clear selection after adding a line
-                showAddLineDialog = false // Close dialog
-            }
-        )
-    }
-
-    if (showDeleteDialog) {
-        DeleteConfirmationDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            onConfirm = {
-                lineToDelete?.let { line ->
-                    proof = Proof(proof.lines.take(line.lineNumber - 1))
-                    selectedLines = emptySet()
-                    feedbackMessage = "Proof updated. Continue building."
-                    // TODO: Create string resource for this
-                    // This should also reset currentDepth if the deleted line was in a sub-proof.
-                }
-                showDeleteDialog = false
-            }
-        )
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(problem.name) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClicked) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                        // TODO: Create string resource for this
-                    }
-                }
-            )
         },
-        floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                // Expanding menu of actions
-                AnimatedVisibility(
-                    visible = isFabMenuExpanded,
-                    enter = fadeIn(animationSpec = tween(150)),
-                    exit = fadeOut(animationSpec = tween(150))
-                ) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        FabAction(text = addPremiseLabel,
-                                  icon = Icons.Default.AddCircle,
-                                  enabled = currentFormula.tiles.isNotEmpty() && currentDepth == 0,
-                                  onClick = {
-                                        val newLine = ProofLine(proof.lines.size + 1, currentFormula, Justification.Premise, 0)
-                                        proof = Proof(proof.lines + newLine)
-                                        currentFormula = Formula(emptyList())
-                                        isFabMenuExpanded = false
-                                  })
-
-                        FabAction(text = "Reiterate",
-                                  icon = Icons.Default.Repeat,
-                                  enabled = currentDepth > 0 && selectedLines.size == 1,
-                                  onClick = {
-                                        val lineToReiterateNum = selectedLines.first()
-                                        val lineToReiterate = proof.lines.find { it.lineNumber == lineToReiterateNum }
-                                        if (lineToReiterate != null && lineToReiterate.depth < currentDepth) {
-                                            val newLine = ProofLine(
-                                                lineNumber = proof.lines.size + 1,
-                                                formula = lineToReiterate.formula,
-                                                justification = Justification.Reiteration(lineToReiterateNum),
-                                                depth = currentDepth
-                                            )
-                                            proof = Proof(proof.lines + newLine)
-                                            selectedLines = emptySet()
-                                            isFabMenuExpanded = false
-                                        } else {
-                                            feedbackMessage = "Can only reiterate a single selected line from an outer scope."
-                                        }
-                                  })
-
-                        FabAction(text = "Start Sub-proof",
-                                  // TODO: Create string resource for this
-                                  icon = Icons.Default.LibraryAdd,
-                                  enabled = currentFormula.tiles.isNotEmpty(),
-                                  onClick = {
-                                        val startLineNumber = proof.lines.size + 1
-                                        val newLine = ProofLine(startLineNumber, currentFormula, Justification.Assumption, currentDepth + 1)
-                                        proof = Proof(proof.lines + newLine)
-                                        currentDepth++
-                                        subproofStartLines = subproofStartLines + startLineNumber
-                                        currentFormula = Formula(emptyList())
-                                        isFabMenuExpanded = false
-                                  })
-                        FabAction(text = "End Sub-proof",
-                                  // TODO: Create string resource for this
-                                  icon = Icons.Default.LibraryAddCheck,
-                                  enabled = currentDepth > 0,
-                                  onClick = {
-                                        val startLine = subproofStartLines.last()
-                                        val endLine = proof.lines.size
-                                        val assumptionFormula = proof.lines.find { it.lineNumber == startLine }?.formula
-                                        val conclusionFormula = proof.lines.last().formula
-                                        if (assumptionFormula != null) {
-                                            val implication =
-                                                Formula(listOf(
-                                                        leftParen) +
-                                                        assumptionFormula.tiles +
-                                                        listOf(implies) +
-                                                        conclusionFormula.tiles +
-                                                        listOf(rightParen))
-                                            val newLine = ProofLine(endLine + 1,
-                                                                    implication,
-                                                                    Justification.ImplicationIntroduction(startLine, endLine),
-                                                                    currentDepth - 1)
-                                            proof = Proof(proof.lines + newLine)
-                                            currentDepth--
-                                            subproofStartLines = subproofStartLines.dropLast(1)
-                                        }
-                                        isFabMenuExpanded = false
-                                  })
-                        FabAction(text = addLineLabel,
-                                  icon = Icons.Default.Create,
-                                  enabled = currentFormula.tiles.isNotEmpty(),
-                                  onClick = {
-                                        dialogPreSelectedLines = selectedLines
-                                        showAddLineDialog = true
-                                        isFabMenuExpanded = false
-                                  })
-                        FabAction(text = validateProofLabel,
-                                  icon = Icons.Default.PlaylistAddCheckCircle,
-                                  enabled = true,
-                                  onClick = {
-                                        val result = ProofValidator.validate(proof)
-                                        if (!result.isValid) {
-                                            feedbackMessage = result.errorMessage ?: proofValidMessage
-                                        } else {
-                                            // Check if the last line matches the conclusion
-                                            if (proof.lines.lastOrNull()?.formula == problem.conclusion) {
-                                                feedbackMessage = proofCompleteMessage
-                                            } else {
-                                                feedbackMessage = proofIncompleteMessage
-                                            }
-                                        }
-                                        isFabMenuExpanded = false
-                                  })
+        confirmButton = {
+            Button(
+                onClick = {
+                    val justification = if (selectedTabIndex == 0) {
+                        Justification.Inference(selectedInferenceRule, lineNumbers)
+                    } else {
+                        Justification.Replacement(selectedReplacementRule, lineNumbers.firstOrNull() ?: 0)
                     }
+                    onConfirm(justification)
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                // Main FAB
-                FloatingActionButton(onClick = { isFabMenuExpanded = !isFabMenuExpanded }) {
-                    Icon(if (isFabMenuExpanded) Icons.Default.Close else Icons.Default.Add, contentDescription = "Actions")
-                }
-            }
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .padding(16.dp)
-        ) {
-            // --- GOAL DISPLAY ---
-            Text(
-                text = goalLabel + " ${problem.conclusion.stringValue}",
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-            )
-
-            // --- Proof Display Area ---
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(vertical = 8.dp)
-                    .then(zoomModifier),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                LazyColumn(modifier = Modifier.padding(16.dp),
-                           verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    items(proof.lines) { line ->
-                        ProofLineView(
-                            line = line,
-                            isSelected = line.lineNumber in selectedLines,
-                            onLineClicked = {
-                                selectedLines = if (line.lineNumber in selectedLines) {
-                                    selectedLines - line.lineNumber
-                                } else {
-                                    selectedLines + line.lineNumber
-                                }
-                            },
-                            currentScale = scale.value,
-                            onDelete = {
-                                lineToDelete = line
-                                showDeleteDialog = true
-                            }
-                        )
-                    }
-                }
-            }
-
-            // --- FORMULA CONSTRUCTION AREA ---
-            SymbolPalette {
-                    tile -> currentFormula = Formula(currentFormula.tiles + tile)
-            }
-            ConstructionArea(
-                formula = currentFormula,
-                onDeleteLast = {
-                    if (currentFormula.tiles.isNotEmpty()) {
-                        currentFormula = Formula(currentFormula.tiles.dropLast(1))
-                    }
-                }
-            )
-            Spacer(Modifier.height(16.dp))
-
-            // --- FEEDBACK AREA ---
-            Text(
-                text = feedbackMessage,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (feedbackMessage == proofCompleteMessage ||
-                            feedbackMessage == proofValidMessage) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.error
-            )
-        }
-    }
+            ) { Text("Confirm") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
-@Preview(showBackground = true)
 @Composable
-fun ProofScreenPreview() {
-    WhatTheWFFTheme {
-        ProofScreen(problem = ProblemSets.chapter1_ModusPonens.get(0),
-                    onBackClicked = { /*TODO*/ } )
-    }
+fun DeleteConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Confirm Deletion") },
+        text = { Text("Are you sure you want to delete this line and all subsequent lines? This action cannot be undone.") },
+        confirmButton = { Button(onClick = onConfirm) { Text("Confirm") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
+

@@ -132,6 +132,7 @@ sealed class Justification {
             is Replacement -> "${lineReference}: ${rule.abbreviation}"
             is ImplicationIntroduction -> "${subproofStart}-${subproofEnd} II"
             is Reiteration -> "${lineReference}: Reit."
+            is ReductioAdAbsurdum -> "${subproofStart}-${subproofEnd} RAA"
         }
     }
 
@@ -140,6 +141,12 @@ sealed class Justification {
 
     // A justification for a temporary assumption that starts a sub-proof.
     object Assumption : Justification()
+
+    data class ReductioAdAbsurdum(
+        val subproofStart: Int,
+        val subproofEnd: Int,
+        val contradictionLine: Int
+    ) : Justification()
 
     // Represents a line derived from other lines using a rule of inference.
     data class Inference(

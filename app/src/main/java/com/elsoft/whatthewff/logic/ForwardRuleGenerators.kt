@@ -316,7 +316,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
      */
-    private fun fAnd (f1: Formula, f2: Formula): Formula {
+    public fun fAnd (f1: Formula, f2: Formula): Formula {
         return Formula(
             listOf(AvailableTiles.leftParen) +
                     f1.tiles +
@@ -329,7 +329,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
      */
-    private fun fOr (f1: Formula, f2: Formula): Formula {
+    public fun fOr (f1: Formula, f2: Formula): Formula {
         return Formula(
             listOf(AvailableTiles.leftParen) +
                     f1.tiles +
@@ -342,7 +342,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
      */
-    private fun fImplies (f1: Formula, f2: Formula): Formula {
+    public fun fImplies (f1: Formula, f2: Formula): Formula {
         return Formula(
             listOf(AvailableTiles.leftParen) +
                     f1.tiles +
@@ -355,7 +355,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes one formula (P) and creates its negation (¬P).
      */
-    private fun fNeg (f1: Formula): Formula {
+    public fun fNeg (f1: Formula): Formula {
         return Formula(
             listOf(AvailableTiles.not) + f1.tiles
         )

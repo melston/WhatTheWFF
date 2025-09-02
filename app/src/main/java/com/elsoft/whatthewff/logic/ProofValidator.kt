@@ -7,6 +7,8 @@ import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.not
 import com.elsoft.whatthewff.logic.AvailableTiles.or
+import com.elsoft.whatthewff.logic.treeToFormula
+
 
 /**
  * A data class to hold the result of a proof validation.
@@ -15,7 +17,7 @@ import com.elsoft.whatthewff.logic.AvailableTiles.or
  * @property isValid Whether the proof is valid.
  * @property errorMessage An optional message explaining why the proof is invalid.
  */
-data class ValidationResult(val isValid: Boolean, val errorMessage: String? = null)
+data class ValidationResult(val isValid: Boolean, val errorMessage: String? = null, val errorLine: Int = -1)
 
 /**
  * A singleton object to provide functionality for validating proofs.
@@ -39,13 +41,14 @@ object ProofValidator {
                 ?: return ValidationResult(false, "Line ${line.lineNumber} is not a Well-Formed Formula.")
 
             // 2. Validate the justification for the line.
-            val justificationResult = when (line.justification) {
+            val justificationResult = when (val just = line.justification) {
                 is Justification.Premise -> ValidationResult(true) // Premises are assumed valid.
                 is Justification.Assumption -> ValidationResult(true) // Assumptions are assumed valid.
-                is Justification.Reiteration -> validateReiteration(currentTree, line.justification, proof, line.lineNumber, line.depth)
-                is Justification.Inference -> validateInference(currentTree, line.justification, provenTrees, line.lineNumber)
-                is Justification.Replacement -> validateReplacement(currentTree, line.justification, provenTrees, line.lineNumber)
-                is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, line.justification, proof, line.lineNumber)
+                is Justification.Reiteration -> validateReiteration(currentTree, just, proof, line.lineNumber, line.depth)
+                is Justification.Inference -> validateInference(currentTree, just, provenTrees, line.lineNumber)
+                is Justification.Replacement -> validateReplacement(currentTree, just, provenTrees, line.lineNumber)
+                is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, just, proof, line.lineNumber)
+                is Justification.ReductioAdAbsurdum -> validateReductioAdAbsurdum(currentTree, just, proof, line.lineNumber)
             }
 
             if (!justificationResult.isValid) {
@@ -56,6 +59,49 @@ object ProofValidator {
             provenTrees[line.lineNumber] = currentTree
         }
         return ValidationResult(true, "Proof is valid!")
+    }
+
+    private fun validateReductioAdAbsurdum(
+        conclusionTree: FormulaNode,
+        justification: Justification.ReductioAdAbsurdum,
+        proof: Proof,
+        currentLineNumber: Int
+    ): ValidationResult {
+        // 1. Get the assumption and the contradiction lines from the sub-proof
+        val assumptionLine = proof.lines.getOrNull(justification.subproofStart - 1)
+        val contradictionLine = proof.lines.getOrNull(justification.contradictionLine - 1)
+
+        if (assumptionLine == null || contradictionLine == null) {
+            return ValidationResult(false, "RAA refers to invalid sub-proof lines.", currentLineNumber)
+        }
+        if (contradictionLine.lineNumber != justification.subproofEnd) {
+            return ValidationResult(false, "Contradiction must be the last line of the sub-proof.", currentLineNumber)
+        }
+
+
+        // 2. Check that the contradiction line is actually a contradiction (P ∧ ¬P)
+        val contradictionTree = WffParser.parse(contradictionLine.formula)
+        if (contradictionTree !is FormulaNode.BinaryOpNode || contradictionTree.operator.symbol != "∧") {
+            return ValidationResult(false, "Line ${justification.contradictionLine} is not a valid contradiction (not a conjunction).", currentLineNumber)
+        }
+
+        val left = contradictionTree.left
+        val right = contradictionTree.right
+        val negatedLeft = WffParser.parse(ForwardRuleGenerators.fNeg(treeToFormula(left)))
+
+        if (negatedLeft != right) {
+            return ValidationResult(false, "Line ${justification.contradictionLine} is not a valid contradiction (P and ¬P).", currentLineNumber)
+        }
+
+        // 3. Check that the final conclusion is the negation of the assumption
+        val assumptionTree = WffParser.parse(assumptionLine.formula)
+        val negatedAssumption = WffParser.parse(ForwardRuleGenerators.fNeg(assumptionLine.formula))
+
+        if (conclusionTree != negatedAssumption) {
+            return ValidationResult(false, "Conclusion must be the negation of the assumption on line ${justification.subproofStart}.", currentLineNumber)
+        }
+
+        return ValidationResult(true)
     }
 
     private fun validateReiteration(
