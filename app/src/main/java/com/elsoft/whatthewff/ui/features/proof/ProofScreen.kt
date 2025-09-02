@@ -98,7 +98,7 @@ fun ProofScreen(
                     val isContradiction = if (lastLineNode is FormulaNode.BinaryOpNode &&
                                               lastLineNode.operator.symbol == "∧") {
                         val leftNegatedTree = WffParser.parse(
-                            RuleGenerators.fNeg(treeToFormula(lastLineNode.left)))
+                            RuleGenerators.fNeg(RuleGenerators.treeToFormula(lastLineNode.left)))
                         leftNegatedTree == lastLineNode.right
                     } else {
                         false
