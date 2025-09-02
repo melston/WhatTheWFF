@@ -5,13 +5,14 @@
 package com.elsoft.whatthewff.logic
 
 import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.iff
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.or
 
 /**
  * This object contains the specific strategies for building complex goals.
  */
-object ForwardRuleGenerators {
+object RuleGenerators {
 
     val implicationIntroduction = ForwardRule(
         name = "Implication Introduction",
@@ -312,6 +313,51 @@ object ForwardRuleGenerators {
     }
 
     ///////////////// Formula building helpers ///////////////////////////////
+
+    /**
+     * Converts a FormulaNode to a Formula.
+     */
+    public fun treeToFormula(node: FormulaNode): Formula {
+        val tiles = mutableListOf<LogicTile>()
+
+        fun getPrecedence(op: LogicTile?): Int {
+            return when (op) {
+                iff -> 1
+                implies -> 2
+                or -> 3
+                and -> 4
+                else -> 0 // Handles null or any other tile (or null)
+            }
+        }
+
+        fun build(node: FormulaNode, parentPrecedence: Int, isRightChild: Boolean) {
+            when (node) {
+                is FormulaNode.VariableNode -> tiles.add(node.tile)
+                is FormulaNode.UnaryOpNode -> {
+                    tiles.add(node.operator)
+                    build(node.child, 10, false) // High precedence for unary content
+                }
+                is FormulaNode.BinaryOpNode -> {
+                    val currentPrecedence = getPrecedence(node.operator)
+                    // Parenthesize if the current operator has lower precedence than its parent,
+                    // or if it's the same precedence and on the right side of a left-associative op.
+                    val needsParens = currentPrecedence < parentPrecedence ||
+                            (currentPrecedence == parentPrecedence && isRightChild && node.operator != implies)
+
+                    if (needsParens) tiles.add(AvailableTiles.leftParen)
+
+                    build(node.left, currentPrecedence, false)
+                    tiles.add(node.operator)
+                    build(node.right, currentPrecedence, true)
+
+                    if (needsParens) tiles.add(AvailableTiles.rightParen)
+                }
+            }
+        }
+
+        build(node, 0, false)
+        return Formula(tiles)
+    }
 
     /**
      * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).

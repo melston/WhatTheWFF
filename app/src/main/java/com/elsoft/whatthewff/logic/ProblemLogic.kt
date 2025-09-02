@@ -136,7 +136,7 @@ object ProblemGenerator {
         for (i in 1..generationSteps) {
             val knownFormulas = proof.map { it.formula }
 
-            val applicableStrategies = ForwardRuleGenerators.allStrategies.filter { it.canApply(knownFormulas) }
+            val applicableStrategies = RuleGenerators.allStrategies.filter { it.canApply(knownFormulas) }
             if (applicableStrategies.isEmpty()) break
 
             val strategy = applicableStrategies.random()
