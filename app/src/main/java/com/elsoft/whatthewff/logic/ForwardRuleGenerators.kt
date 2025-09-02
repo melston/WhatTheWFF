@@ -12,10 +12,49 @@ import com.elsoft.whatthewff.logic.AvailableTiles.or
 /**
  * This object contains the specific strategies for building complex goals.
  */
-object RuleGenerators {
+object ForwardRuleGenerators {
+
+    /**
+     * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
+     */
+    public fun fAnd (f1: Formula, f2: Formula) = Formula(
+        listOf(AvailableTiles.leftParen) +
+                f1.tiles +
+                listOf(AvailableTiles.and) +
+                f2.tiles +
+                listOf(AvailableTiles.rightParen)
+    )
+
+    /**
+     * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
+     */
+    public fun fOr (f1: Formula, f2: Formula) = Formula(
+        listOf(AvailableTiles.leftParen) +
+                f1.tiles +
+                listOf(AvailableTiles.or) +
+                f2.tiles +
+                listOf(AvailableTiles.rightParen)
+    )
+
+    /**
+     * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
+     */
+    public fun fImplies (f1: Formula, f2: Formula) = Formula (
+        listOf(AvailableTiles.leftParen) +
+                f1.tiles +
+                listOf(AvailableTiles.implies) +
+                f2.tiles +
+                listOf(AvailableTiles.rightParen)
+    )
+
+    /**
+     * A function that takes one formula (P) and creates its negation (¬P).
+     */
+    public fun fNeg (f1: Formula) = Formula (listOf(AvailableTiles.not) + f1.tiles )
 
     val implicationIntroduction = ForwardRule(
         name = "Implication Introduction",
+        weight = 10.0,
         canApply = { it.size >= 2 },
         generate = { knownFormulas ->
             val (p, q) = knownFormulas.shuffled().take(2)
@@ -28,6 +67,7 @@ object RuleGenerators {
      */
     val conjunction = ForwardRule(
         name = "Conjunction",
+        weight = 10.1,
         canApply = { it.size >= 2 },
         generate = { knownFormulas ->
             val (p, q) = knownFormulas.shuffled().take(2)
@@ -37,6 +77,7 @@ object RuleGenerators {
 
     val modusPonens = ForwardRule(
         name = "Modus Ponens",
+        weight = 7.5,
         canApply = { knownFormulas -> findAllModusPonensPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllModusPonensPairs(knownFormulas).randomOrNull()?.let { (implication, antecedent) ->
@@ -49,6 +90,7 @@ object RuleGenerators {
 
     val modusTollens = ForwardRule(
         name = "Modus Tollens",
+        weight = 7.75,
         canApply = { knownFormulas -> findAllModusTollensPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllModusTollensPairs(knownFormulas).randomOrNull()?.let { (implication, negConsequent) ->
@@ -62,6 +104,7 @@ object RuleGenerators {
 
     val hypotheticalSyllogism = ForwardRule(
         name = "Hypothetical Syllogism",
+        weight = 10.2,
         canApply = { knownFormulas -> findAllHypotheticalSyllogismPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllHypotheticalSyllogismPairs(knownFormulas).randomOrNull()?.let { (imp1, imp2, _) ->
@@ -77,6 +120,7 @@ object RuleGenerators {
 
     val disjunctiveSyllogism = ForwardRule(
         name = "Disjunctive Syllogism",
+        weight = 10.3,
         canApply = { knownFormulas -> findAllDisjunctiveSyllogismPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllDisjunctiveSyllogismPairs(knownFormulas).randomOrNull()?.let { (disjunction, negation) ->
@@ -102,6 +146,7 @@ object RuleGenerators {
 
     val constructiveDilemma = ForwardRule(
         name = "Constructive Dilemma",
+        weight = 10.4,
         canApply = { knownFormulas -> findAllConstructiveDilemmaPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllConstructiveDilemmaPairs(knownFormulas).randomOrNull()?.let { (imp1, imp2, dis) ->
@@ -117,6 +162,7 @@ object RuleGenerators {
 
     val absorption = ForwardRule(
         name = "Absorption",
+        weight = 5.0,
         canApply = { knownFormulas -> findAllAbsorptionPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllAbsorptionPairs(knownFormulas).randomOrNull()?.let { premise ->
@@ -135,6 +181,7 @@ object RuleGenerators {
 
     val simplification = ForwardRule(
         name = "Simplification",
+        weight = 5.1,
         canApply = { knownFormulas -> findAllConjunctions(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
             findAllConjunctions(knownFormulas).randomOrNull()?.let { premise ->
@@ -149,6 +196,7 @@ object RuleGenerators {
 
     val addition = ForwardRule(
         name = "Addition",
+        weight = 5.2,
         canApply = { it.size >= 2 }, // Needs at least two formulas to pick from for P and Q
         generate = { knownFormulas ->
             // The rule is P |- (P ∨ Q). We need a P and we need to invent a Q.
@@ -162,6 +210,9 @@ object RuleGenerators {
     val allStrategies = listOf(modusPonens, modusTollens, conjunction, implicationIntroduction,
                                hypotheticalSyllogism, disjunctiveSyllogism, constructiveDilemma,
                                absorption, simplification, addition)
+
+    // For building base premises
+    val simpleCompositionStrategies = listOf(conjunction, implicationIntroduction)
 
     ////////////// HELPER FUNCTIONS //////////////
 
@@ -357,54 +408,6 @@ object RuleGenerators {
 
         build(node, 0, false)
         return Formula(tiles)
-    }
-
-    /**
-     * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
-     */
-    public fun fAnd (f1: Formula, f2: Formula): Formula {
-        return Formula(
-            listOf(AvailableTiles.leftParen) +
-                    f1.tiles +
-                    listOf(AvailableTiles.and) +
-                    f2.tiles +
-                    listOf(AvailableTiles.rightParen)
-        )
-    }
-
-    /**
-     * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
-     */
-    public fun fOr (f1: Formula, f2: Formula): Formula {
-        return Formula(
-            listOf(AvailableTiles.leftParen) +
-                    f1.tiles +
-                    listOf(AvailableTiles.or) +
-                    f2.tiles +
-                    listOf(AvailableTiles.rightParen)
-        )
-    }
-
-    /**
-     * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
-     */
-    public fun fImplies (f1: Formula, f2: Formula): Formula {
-        return Formula(
-            listOf(AvailableTiles.leftParen) +
-                    f1.tiles +
-                    listOf(AvailableTiles.implies) +
-                    f2.tiles +
-                    listOf(AvailableTiles.rightParen)
-        )
-    }
-
-    /**
-     * A function that takes one formula (P) and creates its negation (¬P).
-     */
-    public fun fNeg (f1: Formula): Formula {
-        return Formula(
-            listOf(AvailableTiles.not) + f1.tiles
-        )
     }
 
 }

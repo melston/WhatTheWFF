@@ -85,7 +85,7 @@ object ProofValidator {
 
         val left = contradictionTree.left
         val right = contradictionTree.right
-        val negatedLeft = WffParser.parse(RuleGenerators.fNeg(RuleGenerators.treeToFormula(left)))
+        val negatedLeft = WffParser.parse(ForwardRuleGenerators.fNeg(ForwardRuleGenerators.treeToFormula(left)))
 
         if (negatedLeft != right) {
             return ValidationResult(false, "Line ${justification.contradictionLine} is not a valid contradiction (P and ¬P).", currentLineNumber)
@@ -93,7 +93,7 @@ object ProofValidator {
 
         // 3. Check that the final conclusion is the negation of the assumption
         val assumptionTree = WffParser.parse(assumptionLine.formula)
-        val negatedAssumption = WffParser.parse(RuleGenerators.fNeg(assumptionLine.formula))
+        val negatedAssumption = WffParser.parse(ForwardRuleGenerators.fNeg(assumptionLine.formula))
 
         if (conclusionTree != negatedAssumption) {
             return ValidationResult(false, "Conclusion must be the negation of the assumption on line ${justification.subproofStart}.", currentLineNumber)

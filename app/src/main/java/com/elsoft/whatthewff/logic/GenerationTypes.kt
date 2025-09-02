@@ -15,6 +15,7 @@ data class ProofStep(val formula: Formula, val justification: String, val premis
  */
 data class ForwardRule(
     val name: String,
+    val weight: Double, // the initial chance of this rule being selected.
     val canApply: (knownFormulas: List<Formula>) -> Boolean,
     val generate: (knownFormulas: List<Formula>) -> ProofStep?
 )

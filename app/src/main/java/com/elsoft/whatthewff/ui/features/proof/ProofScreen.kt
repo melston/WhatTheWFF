@@ -98,7 +98,7 @@ fun ProofScreen(
                     val isContradiction = if (lastLineNode is FormulaNode.BinaryOpNode &&
                                               lastLineNode.operator.symbol == "∧") {
                         val leftNegatedTree = WffParser.parse(
-                            RuleGenerators.fNeg(RuleGenerators.treeToFormula(lastLineNode.left)))
+                            ForwardRuleGenerators.fNeg(ForwardRuleGenerators.treeToFormula(lastLineNode.left)))
                         leftNegatedTree == lastLineNode.right
                     } else {
                         false
@@ -106,11 +106,11 @@ fun ProofScreen(
 
                     if (isContradiction) {
                         // RAA: Conclude the negation of the assumption
-                        finalFormula = RuleGenerators.fNeg(assumptionLine.formula)
+                        finalFormula = ForwardRuleGenerators.fNeg(assumptionLine.formula)
                         justification = Justification.ReductioAdAbsurdum(startLine, endLine, endLine)
                     } else {
                         // II: Conclude the implication
-                        finalFormula = RuleGenerators.fImplies(assumptionLine.formula, conclusionLine.formula)
+                        finalFormula = ForwardRuleGenerators.fImplies(assumptionLine.formula, conclusionLine.formula)
                         justification = Justification.ImplicationIntroduction(startLine, endLine)
                     }
 
