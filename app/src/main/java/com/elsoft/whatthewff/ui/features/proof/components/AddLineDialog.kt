@@ -50,10 +50,12 @@ import com.elsoft.whatthewff.logic.ForwardRuleGenerators.fOr
 import com.elsoft.whatthewff.logic.ForwardRuleGenerators.treeToFormula
 import com.elsoft.whatthewff.logic.InferenceRule
 import com.elsoft.whatthewff.logic.Justification
+import com.elsoft.whatthewff.logic.LogicTile
 import com.elsoft.whatthewff.logic.Proof
 import com.elsoft.whatthewff.logic.ProofLine
 import com.elsoft.whatthewff.logic.ReplacementRule
 import com.elsoft.whatthewff.logic.WffParser
+import kotlin.collections.plus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -211,19 +213,27 @@ fun AddLineDialog(
 private data class Suggestion(val formula: Formula, val sourceLines: List<Int>)
 
 private object ProofSuggester {
+    private fun groupFormulaTiles(formula: Formula): List<LogicTile> {
+        val tiles = if (WffParser.parse(formula) is FormulaNode.BinaryOpNode) {
+            listOf(AvailableTiles.leftParen) + formula.tiles + listOf(AvailableTiles.rightParen)
+        } else {
+            formula.tiles
+        }
+        return tiles
+    }
+
     // Helper to intelligently create a conjunction, adding parens if necessary
     private fun smartAnd(f1: Formula, f2: Formula): Formula {
-        val f1Tiles = if (WffParser.parse(f1) is FormulaNode.BinaryOpNode) {
-            listOf(AvailableTiles.leftParen) + f1.tiles + listOf(AvailableTiles.rightParen)
-        } else {
-            f1.tiles
-        }
-        val f2Tiles = if (WffParser.parse(f2) is FormulaNode.BinaryOpNode) {
-            listOf(AvailableTiles.leftParen) + f2.tiles + listOf(AvailableTiles.rightParen)
-        } else {
-            f2.tiles
-        }
+        val f1Tiles = groupFormulaTiles(f1)
+        val f2Tiles = groupFormulaTiles(f2)
         return Formula(f1Tiles + listOf(AvailableTiles.and) + f2Tiles)
+    }
+
+    // Helper to intelligently create a disjunction, adding parens if necessary
+    private fun smartOr(f1: Formula, f2: Formula): Formula {
+        val f1Tiles = groupFormulaTiles(f1)
+        val f2Tiles = groupFormulaTiles(f2)
+        return Formula(f1Tiles + listOf(AvailableTiles.or) + f2Tiles)
     }
 
     fun suggestInference(rule: InferenceRule, selectedLines: List<ProofLine>, fullProof: Proof): List<Suggestion> {
@@ -317,8 +327,8 @@ private object ProofSuggester {
                 selectedLines.flatMap { p1 ->
                     allKnownFormulas.filter { p2 -> p1.lineNumber != p2.lineNumber }.flatMap { p2 ->
                         listOf(
-                            Suggestion(fOr(p1.formula, p2.formula), listOf(p1.lineNumber)),
-                            Suggestion(fOr(p2.formula, p1.formula), listOf(p1.lineNumber))
+                            Suggestion(smartOr(p1.formula, p2.formula), listOf(p1.lineNumber)),
+                            Suggestion(smartOr(p2.formula, p1.formula), listOf(p1.lineNumber))
                         )
                     }
                 }

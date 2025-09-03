@@ -416,7 +416,6 @@ fun ProofScreen(
 
             // --- Dialogs ---
             if (showAddLineDialog) {
-                val isSuggestionMode = currentFormula.tiles.isEmpty() && selectedLines.isNotEmpty()
                 AddLineDialog(
                     onDismiss = { showAddLineDialog = false },
                     onConfirm = { justification, formulaToAdd ->
@@ -467,7 +466,7 @@ fun ConstructionArea(
 ) {
     val dragAndDropState = LocalDragAndDropState.current
     var dropTargetBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-    var insertionIndex by remember { mutableStateOf(-1) }
+    var insertionIndex by remember { mutableIntStateOf(-1) }
     val itemPositions = remember { mutableStateMapOf<Int, Offset>() }
     val itemWidths = remember { mutableStateMapOf<Int, Int>() }
 
@@ -508,7 +507,7 @@ fun ConstructionArea(
                             val finalIndex = if (data.index < insertionIndex) insertionIndex - 1 else insertionIndex
                             currentTiles.add(finalIndex, draggedTile)
                         }
-                        null -> TODO()
+                        null -> {} // Don't do anything if no data.
                     }
                     onFormulaChange(Formula(currentTiles))
                 } else { // Dropped outside (delete)
@@ -542,8 +541,6 @@ fun ConstructionArea(
                     .height(48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val currentlyDraggedIndex = (dragAndDropState.dataToDrop as? DragData.ExistingTile)?.index
-
                 formula.tiles.forEachIndexed { index, tile ->
                     if (insertionIndex == index) {
                         Box(Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
