@@ -7,14 +7,6 @@ package com.elsoft.whatthewff.logic
 import android.os.Build
 import androidx.annotation.RequiresApi
 
-//import com.elsoft.whatthewff.logic.AvailableTiles.implies
-//import com.elsoft.whatthewff.logic.AvailableTiles.or
-//import com.elsoft.whatthewff.logic.AvailableTiles.and
-//import com.elsoft.whatthewff.logic.AvailableTiles.not
-//import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
-//import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
-//import com.elsoft.whatthewff.logic.AvailableTiles.iff
-
 /**
  * Represents a single logic problem, containing the initial premises,
  * the goal conclusion, and some metadata.
