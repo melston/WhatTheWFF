@@ -231,7 +231,7 @@ object ForwardRuleGenerators {
      * Function used in MP to find all formulas in the known formulas list that are implications and
      * have the antecedent in the known formulas list.
      */
-    private fun findAllModusPonensPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
+    fun findAllModusPonensPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
         val pairs = mutableListOf<Pair<Formula, Formula>>()
         val implications = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
@@ -249,7 +249,7 @@ object ForwardRuleGenerators {
      * Function used in MT to find all formulas in the known formulas list that are implications
      * and have the negation of the consequent in the known formulas list.
      */
-    private fun findAllModusTollensPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
+    fun findAllModusTollensPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
         val pairs = mutableListOf<Pair<Formula, Formula>>()
         val implications = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
@@ -269,7 +269,7 @@ object ForwardRuleGenerators {
      * whose consequent is the same as the antecedent of another implication also in the known
      * formulas list.
      */
-    private fun findAllHypotheticalSyllogismPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
+    fun findAllHypotheticalSyllogismPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
         val pairs = mutableListOf<Triple<Formula, Formula, Formula>>()
         val implications = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
@@ -293,7 +293,7 @@ object ForwardRuleGenerators {
      * Function used in DS to find all formulas in the known formulas list that are disjunctions
      * and have the negation of one of the disjuncts in the known formulas list.
      */
-    private fun findAllDisjunctiveSyllogismPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
+    fun findAllDisjunctiveSyllogismPairs(knownFormulas: List<Formula>): List<Pair<Formula, Formula>> {
         val pairs = mutableListOf<Pair<Formula, Formula>>()
         val disjunctions = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator.symbol == "∨" } ?: false
@@ -322,7 +322,7 @@ object ForwardRuleGenerators {
      * list that are pairs of implications: (p → q), (r → s) where the disjunction of the
      * antecedents (p ∨ r) are also in the list.
      */
-    private fun findAllConstructiveDilemmaPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
+    fun findAllConstructiveDilemmaPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
         val triples = mutableListOf<Triple<Formula, Formula, Formula>>()
         val implications = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
@@ -358,7 +358,7 @@ object ForwardRuleGenerators {
      * Function used in Abs to find all formulas in the known formulas list that are implications.
      * This is the only requirement for Absorption.
      */
-    private fun findAllAbsorptionPairs(knownFormulas: List<Formula>): List<Formula> {
+    fun findAllAbsorptionPairs(knownFormulas: List<Formula>): List<Formula> {
         return knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
         }

@@ -36,12 +36,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.elsoft.whatthewff.logic.AvailableTiles
 import com.elsoft.whatthewff.logic.Formula
+import com.elsoft.whatthewff.logic.FormulaNode
 import com.elsoft.whatthewff.logic.ForwardRuleGenerators
+import com.elsoft.whatthewff.logic.ForwardRuleGenerators.treeToFormula
 import com.elsoft.whatthewff.logic.InferenceRule
 import com.elsoft.whatthewff.logic.Justification
 import com.elsoft.whatthewff.logic.ProofLine
 import com.elsoft.whatthewff.logic.ReplacementRule
+import com.elsoft.whatthewff.logic.WffParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,18 +203,86 @@ fun AddLineDialog(
 }
 
 private object ProofSuggester {
-    fun suggestInference(rule: InferenceRule, premises: List<Formula>): List<Formula> {
-        val forwardRule = when (rule) {
-            InferenceRule.MODUS_PONENS -> ForwardRuleGenerators.modusPonens
-            InferenceRule.MODUS_TOLLENS -> ForwardRuleGenerators.modusTollens
-            InferenceRule.HYPOTHETICAL_SYLLOGISM -> ForwardRuleGenerators.hypotheticalSyllogism
-            InferenceRule.DISJUNCTIVE_SYLLOGISM -> ForwardRuleGenerators.disjunctiveSyllogism
-            InferenceRule.CONSTRUCTIVE_DILEMMA -> ForwardRuleGenerators.constructiveDilemma
-            InferenceRule.ABSORPTION -> ForwardRuleGenerators.absorption
-            InferenceRule.SIMPLIFICATION -> ForwardRuleGenerators.simplification
-            InferenceRule.ADDITION -> ForwardRuleGenerators.addition
-            InferenceRule.CONJUNCTION -> ForwardRuleGenerators.conjunction
+    // Helper to intelligently create a conjunction, adding parens if necessary
+    private fun smartAnd(f1: Formula, f2: Formula): Formula {
+        val f1Tiles = if (WffParser.parse(f1) is FormulaNode.BinaryOpNode) {
+            listOf(AvailableTiles.leftParen) + f1.tiles + listOf(AvailableTiles.rightParen)
+        } else {
+            f1.tiles
         }
-        return forwardRule.generate(premises)?.map { it.formula } ?: emptyList()
+        val f2Tiles = if (WffParser.parse(f2) is FormulaNode.BinaryOpNode) {
+            listOf(AvailableTiles.leftParen) + f2.tiles + listOf(AvailableTiles.rightParen)
+        } else {
+            f2.tiles
+        }
+        return Formula(f1Tiles + listOf(AvailableTiles.and) + f2Tiles)
+    }
+
+    fun suggestInference(rule: InferenceRule, premises: List<Formula>): List<Formula> {
+        return when (rule) {
+            InferenceRule.MODUS_PONENS -> {
+                ForwardRuleGenerators.findAllModusPonensPairs(premises).map { (imp, _) ->
+                    val impNode = WffParser.parse(imp) as FormulaNode.BinaryOpNode
+                    treeToFormula(impNode.right)
+                }
+            }
+            InferenceRule.MODUS_TOLLENS -> {
+                ForwardRuleGenerators.findAllModusTollensPairs(premises).map { (imp, _) ->
+                    val impNode = WffParser.parse(imp) as FormulaNode.BinaryOpNode
+                    ForwardRuleGenerators.fNeg(treeToFormula(impNode.left))
+                }
+            }
+            InferenceRule.HYPOTHETICAL_SYLLOGISM -> {
+                ForwardRuleGenerators.findAllHypotheticalSyllogismPairs(premises).map { (imp1, imp2, _) ->
+                    val pNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).left
+                    val rNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
+                    ForwardRuleGenerators.fImplies(treeToFormula(pNode), treeToFormula(rNode))
+                }
+            }
+            InferenceRule.DISJUNCTIVE_SYLLOGISM -> {
+                ForwardRuleGenerators.findAllDisjunctiveSyllogismPairs(premises).map { (disjunction, negation) ->
+                    val disjNode = WffParser.parse(disjunction) as FormulaNode.BinaryOpNode
+                    val negNode = (WffParser.parse(negation) as FormulaNode.UnaryOpNode).child
+                    val pFormula = treeToFormula(disjNode.left)
+                    val qFormula = treeToFormula(disjNode.right)
+                    if (WffParser.parse(pFormula) == negNode) qFormula else pFormula
+                }
+            }
+            InferenceRule.CONSTRUCTIVE_DILEMMA -> {
+                ForwardRuleGenerators.findAllConstructiveDilemmaPairs(premises).map { (conjImp, _, _) ->
+                    val conjImpNode = WffParser.parse(conjImp) as FormulaNode.BinaryOpNode
+                    val qNode = (conjImpNode.left as FormulaNode.BinaryOpNode).right
+                    val sNode = (conjImpNode.right as FormulaNode.BinaryOpNode).right
+                    ForwardRuleGenerators.fOr(treeToFormula(qNode), treeToFormula(sNode))
+                }
+            }
+            InferenceRule.ABSORPTION -> {
+                ForwardRuleGenerators.findAllAbsorptionPairs(premises).map { implication ->
+                    val impNode = WffParser.parse(implication) as FormulaNode.BinaryOpNode
+                    val pNode = impNode.left
+                    val qNode = (impNode.right as FormulaNode.BinaryOpNode).let { if (it == pNode) impNode.right.right else it }
+                    ForwardRuleGenerators.fImplies(treeToFormula(pNode), treeToFormula(qNode))
+                }
+            }
+            InferenceRule.SIMPLIFICATION -> {
+                val conjunctions = premises.filter { WffParser.parse(it) is FormulaNode.BinaryOpNode && (WffParser.parse(it) as FormulaNode.BinaryOpNode).operator == AvailableTiles.and }
+                conjunctions.flatMap { conj ->
+                    val node = WffParser.parse(conj) as FormulaNode.BinaryOpNode
+                    listOf(treeToFormula(node.left), treeToFormula(node.right))
+                }
+            }
+            InferenceRule.ADDITION -> {
+                if (premises.size < 2) return emptyList()
+                premises.flatMap { p1 -> premises.filter { it != p1 }.map {
+                    p2 -> ForwardRuleGenerators.fOr(p1, p2)
+                } }
+            }
+            InferenceRule.CONJUNCTION -> {
+                if (premises.size < 2) return emptyList()
+                premises.flatMap { p1 -> premises.filter { it != p1 }.map {
+                    p2 -> smartAnd(p1, p2)
+                } }
+            }
+        }.distinct()
     }
 }
