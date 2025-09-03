@@ -431,10 +431,9 @@ fun ProofScreen(
                         selectedLines = emptySet()
                         showAddLineDialog = false
                     },
-                    initialLines = selectedLines.joinToString(","),
-                    isSuggestionMode = isSuggestionMode,
-                    allProofLines = proof.lines,
-                    constructedFormula = currentFormula
+                    initialLines = selectedLines,
+                    currentFormula = currentFormula,
+                    fullProof = proof
                 )
             }
             if (showDeleteDialog) {

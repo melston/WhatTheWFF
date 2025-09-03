@@ -1,6 +1,8 @@
 package com.elsoft.whatthewff.ui.features.proof.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,15 +36,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.elsoft.whatthewff.logic.AvailableTiles
 import com.elsoft.whatthewff.logic.Formula
 import com.elsoft.whatthewff.logic.FormulaNode
 import com.elsoft.whatthewff.logic.ForwardRuleGenerators
+import com.elsoft.whatthewff.logic.ForwardRuleGenerators.fImplies
+import com.elsoft.whatthewff.logic.ForwardRuleGenerators.fNeg
+import com.elsoft.whatthewff.logic.ForwardRuleGenerators.fOr
 import com.elsoft.whatthewff.logic.ForwardRuleGenerators.treeToFormula
 import com.elsoft.whatthewff.logic.InferenceRule
 import com.elsoft.whatthewff.logic.Justification
+import com.elsoft.whatthewff.logic.Proof
 import com.elsoft.whatthewff.logic.ProofLine
 import com.elsoft.whatthewff.logic.ReplacementRule
 import com.elsoft.whatthewff.logic.WffParser
@@ -52,48 +60,49 @@ import com.elsoft.whatthewff.logic.WffParser
 fun AddLineDialog(
     onDismiss: () -> Unit,
     onConfirm: (Justification, Formula) -> Unit,
-    initialLines: String,
-    isSuggestionMode: Boolean,
-    allProofLines: List<ProofLine>,
-    constructedFormula: Formula
+    initialLines: Set<Int>,
+    currentFormula: Formula,
+    fullProof: Proof
 ) {
+    val isSuggestionMode = currentFormula.tiles.isEmpty() && initialLines.isNotEmpty()
+
     var tabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Inference", "Replacement")
     var selectedInferenceRule by remember { mutableStateOf(InferenceRule.MODUS_PONENS) }
     var selectedReplacementRule by remember { mutableStateOf(ReplacementRule.DOUBLE_NEGATION) }
-    var referenceLines by remember { mutableStateOf(initialLines) }
+    var referenceLines by remember { mutableStateOf(initialLines.joinToString(",")) }
 
-    var suggestions by remember { mutableStateOf<List<Formula>>(emptyList()) }
-    var selectedSuggestion by remember { mutableStateOf<Formula?>(null) }
+    var suggestions by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
+    var selectedSuggestion by remember { mutableStateOf<Suggestion?>(null) }
 
-    LaunchedEffect(selectedInferenceRule, referenceLines, tabIndex) {
-        if (isSuggestionMode && tabIndex == 0) {
-            val lineRefs = referenceLines.split(',').mapNotNull { it.trim().toIntOrNull() }
-            val selectedPremises =
-                lineRefs.mapNotNull { lineNum -> allProofLines.find { it.lineNumber == lineNum }?.formula }
-            suggestions = ProofSuggester.suggestInference(selectedInferenceRule, selectedPremises)
-            selectedSuggestion = null // Reset selection when rule changes
-        } else {
-            suggestions = emptyList()
+    // This effect calculates suggestions whenever the rule or selected lines change
+    LaunchedEffect(tabIndex, selectedInferenceRule, selectedReplacementRule, initialLines) {
+        if (isSuggestionMode) {
+            val selectedProofLines = initialLines.map { fullProof.lines[it - 1] }
+            suggestions = if (tabIndex == 0) {
+                ProofSuggester.suggestInference(selectedInferenceRule, selectedProofLines, fullProof)
+            } else {
+                // Placeholder for replacement suggestions
+                emptyList()
+            }
+            selectedSuggestion = null // Reset selection when suggestions change
         }
     }
 
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Derived Line") },
+        title = { Text(if (isSuggestionMode) "Select Derived Line" else "Add Derived Line") },
         text = {
             Column {
                 TabRow(selectedTabIndex = tabIndex) {
                     tabs.forEachIndexed { index, title ->
-                        Tab(
-                            text = { Text(title) },
+                        Tab(text = { Text(title) },
                             selected = tabIndex == index,
                             onClick = { tabIndex = index }
                         )
                     }
                 }
-                Spacer(Modifier.Companion.height(16.dp))
+                Spacer(Modifier.height(16.dp))
 
                 var isRuleDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -106,7 +115,7 @@ fun AddLineDialog(
                         onValueChange = {},
                         readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isRuleDropdownExpanded) },
-                        modifier = Modifier.Companion.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
                     ExposedDropdownMenu(
                         expanded = isRuleDropdownExpanded,
@@ -136,41 +145,34 @@ fun AddLineDialog(
                     }
                 }
 
-                Spacer(Modifier.Companion.height(8.dp))
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = referenceLines,
                     onValueChange = { referenceLines = it },
                     label = { Text("Reference Lines (e.g., 1,2)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Companion.Number)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    enabled = !isSuggestionMode
                 )
 
-                if (isSuggestionMode && suggestions.isNotEmpty()) {
-                    Spacer(Modifier.Companion.height(16.dp))
+                if (isSuggestionMode) {
+                    Spacer(Modifier.height(16.dp))
                     Text("Suggestions:", style = MaterialTheme.typography.titleSmall)
-                    LazyColumn(
-                        modifier = Modifier.Companion.heightIn(max = 150.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 150.dp).border(1.dp, MaterialTheme.colorScheme.outline)) {
                         items(suggestions) { suggestion ->
                             Row(
-                                modifier = Modifier.Companion
+                                modifier = Modifier
                                     .fillMaxWidth()
-                                    .selectable(
-                                        selected = (suggestion == selectedSuggestion),
-                                        onClick = { selectedSuggestion = suggestion }
-                                    )
+                                    .clickable { selectedSuggestion = suggestion }
+                                    .background(if (suggestion == selectedSuggestion) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                                     .padding(8.dp),
-                                verticalAlignment = Alignment.Companion.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                RadioButton(
-                                    selected = (suggestion == selectedSuggestion),
-                                    onClick = { selectedSuggestion = suggestion }
-                                )
-                                Text(
-                                    text = suggestion.stringValue,
-                                    modifier = Modifier.Companion.padding(start = 8.dp)
-                                )
+                                RadioButton(selected = suggestion == selectedSuggestion, onClick = { selectedSuggestion = suggestion })
+                                Text(suggestion.formula.stringValue, fontFamily = FontFamily.Monospace)
                             }
+                        }
+                        if (suggestions.isEmpty()) {
+                            item { Text("No suggestions for this rule and selection.", modifier = Modifier.padding(8.dp)) }
                         }
                     }
                 }
@@ -179,28 +181,34 @@ fun AddLineDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val formulaToAdd =
-                        if (isSuggestionMode) selectedSuggestion else constructedFormula
-                    if (formulaToAdd != null) {
-                        val lineRefs =
-                            referenceLines.split(',').mapNotNull { it.trim().toIntOrNull() }
-                        val justification = if (tabIndex == 0) {
+                    val justification: Justification
+                    val derivedFormula: Formula
+                    if (isSuggestionMode) {
+                        justification = if (tabIndex == 0) {
+                            Justification.Inference(selectedInferenceRule, selectedSuggestion!!.sourceLines)
+                        } else {
+                            Justification.Replacement(selectedReplacementRule, selectedSuggestion!!.sourceLines.first())
+                        }
+                        derivedFormula = selectedSuggestion!!.formula
+                    } else {
+                        val lineRefs = referenceLines.split(',').mapNotNull { it.trim().toIntOrNull() }
+                        justification = if (tabIndex == 0) {
                             Justification.Inference(selectedInferenceRule, lineRefs)
                         } else {
-                            Justification.Replacement(
-                                selectedReplacementRule,
-                                lineRefs.firstOrNull() ?: 0
-                            )
+                            Justification.Replacement(selectedReplacementRule, lineRefs.firstOrNull() ?: 0)
                         }
-                        onConfirm(justification, formulaToAdd)
+                        derivedFormula = currentFormula
                     }
+                    onConfirm(justification, derivedFormula)
                 },
-                enabled = if (isSuggestionMode) selectedSuggestion != null else constructedFormula.tiles.isNotEmpty()
+                enabled = if (isSuggestionMode) selectedSuggestion != null else true
             ) { Text("Confirm") }
         },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+private data class Suggestion(val formula: Formula, val sourceLines: List<Int>)
 
 private object ProofSuggester {
     // Helper to intelligently create a conjunction, adding parens if necessary
@@ -218,70 +226,110 @@ private object ProofSuggester {
         return Formula(f1Tiles + listOf(AvailableTiles.and) + f2Tiles)
     }
 
-    fun suggestInference(rule: InferenceRule, premises: List<Formula>): List<Formula> {
+    fun suggestInference(rule: InferenceRule, selectedLines: List<ProofLine>, fullProof: Proof): List<Suggestion> {
+        val selectedFormulas = selectedLines.map { it.formula }
         return when (rule) {
             InferenceRule.MODUS_PONENS -> {
-                ForwardRuleGenerators.findAllModusPonensPairs(premises).map { (imp, _) ->
+                ForwardRuleGenerators.findAllModusPonensPairs(selectedFormulas).map {
+                            (imp, ante) ->
                     val impNode = WffParser.parse(imp) as FormulaNode.BinaryOpNode
-                    treeToFormula(impNode.right)
+                    val consequent = treeToFormula(impNode.right)
+                    val impLine = selectedLines.first { it.formula == imp }.lineNumber
+                    val anteLine = selectedLines.first { it.formula == ante }.lineNumber
+                    Suggestion(consequent, listOf(impLine, anteLine))
                 }
             }
             InferenceRule.MODUS_TOLLENS -> {
-                ForwardRuleGenerators.findAllModusTollensPairs(premises).map { (imp, _) ->
+                ForwardRuleGenerators.findAllModusTollensPairs(selectedFormulas).map {
+                            (imp, negCons) ->
                     val impNode = WffParser.parse(imp) as FormulaNode.BinaryOpNode
-                    ForwardRuleGenerators.fNeg(treeToFormula(impNode.left))
+                    val negAnte = fNeg(treeToFormula(impNode.left))
+                    val impLine = selectedLines.first { it.formula == imp }.lineNumber
+                    val negConsLine = selectedLines.first { it.formula == negCons }.lineNumber
+                    Suggestion(negAnte, listOf(impLine, negConsLine))
                 }
             }
             InferenceRule.HYPOTHETICAL_SYLLOGISM -> {
-                ForwardRuleGenerators.findAllHypotheticalSyllogismPairs(premises).map { (imp1, imp2, _) ->
+                ForwardRuleGenerators.findAllHypotheticalSyllogismPairs(selectedFormulas).map {
+                            (imp1, imp2, _) ->
                     val pNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).left
                     val rNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
-                    ForwardRuleGenerators.fImplies(treeToFormula(pNode), treeToFormula(rNode))
+                    val conclusion = fImplies(treeToFormula(pNode), treeToFormula(rNode))
+                    val imp1Line = selectedLines.first { it.formula == imp1 }.lineNumber
+                    val imp2Line = selectedLines.first { it.formula == imp2 }.lineNumber
+                    Suggestion(conclusion, listOf(imp1Line, imp2Line))
                 }
+
             }
             InferenceRule.DISJUNCTIVE_SYLLOGISM -> {
-                ForwardRuleGenerators.findAllDisjunctiveSyllogismPairs(premises).map { (disjunction, negation) ->
+                ForwardRuleGenerators.findAllDisjunctiveSyllogismPairs(selectedFormulas).map {
+                            (disjunction, negation) ->
                     val disjNode = WffParser.parse(disjunction) as FormulaNode.BinaryOpNode
                     val negNode = (WffParser.parse(negation) as FormulaNode.UnaryOpNode).child
                     val pFormula = treeToFormula(disjNode.left)
-                    val qFormula = treeToFormula(disjNode.right)
-                    if (WffParser.parse(pFormula) == negNode) qFormula else pFormula
+                    val conclusion = if (WffParser.parse(pFormula) == negNode) treeToFormula(disjNode.right) else pFormula
+                    val disjLine = selectedLines.first { it.formula == disjunction }.lineNumber
+                    val negLine = selectedLines.first { it.formula == negation }.lineNumber
+                    Suggestion(conclusion, listOf(disjLine, negLine))
                 }
             }
             InferenceRule.CONSTRUCTIVE_DILEMMA -> {
-                ForwardRuleGenerators.findAllConstructiveDilemmaPairs(premises).map { (conjImp, _, _) ->
+                ForwardRuleGenerators.findAllConstructiveDilemmaPairs(selectedFormulas).map {
+                            (conjImp, disj, _) ->
                     val conjImpNode = WffParser.parse(conjImp) as FormulaNode.BinaryOpNode
                     val qNode = (conjImpNode.left as FormulaNode.BinaryOpNode).right
                     val sNode = (conjImpNode.right as FormulaNode.BinaryOpNode).right
-                    ForwardRuleGenerators.fOr(treeToFormula(qNode), treeToFormula(sNode))
+                    val conclusion = fOr(treeToFormula(qNode), treeToFormula(sNode))
+                    val conjLine = selectedLines.first { it.formula == conjImp }.lineNumber
+                    val disjLine = selectedLines.first { it.formula == disj }.lineNumber
+                    Suggestion(conclusion, listOf(conjLine, disjLine))
                 }
             }
             InferenceRule.ABSORPTION -> {
-                ForwardRuleGenerators.findAllAbsorptionPairs(premises).map { implication ->
+                ForwardRuleGenerators.findAllAbsorptionPairs(selectedFormulas).map { implication ->
                     val impNode = WffParser.parse(implication) as FormulaNode.BinaryOpNode
                     val pNode = impNode.left
-                    val qNode = (impNode.right as FormulaNode.BinaryOpNode).let { if (it == pNode) impNode.right.right else it }
-                    ForwardRuleGenerators.fImplies(treeToFormula(pNode), treeToFormula(qNode))
+                    val qNode = impNode.right
+                    val conclusion = fImplies(treeToFormula(pNode),
+                                              smartAnd(treeToFormula(pNode),
+                                              treeToFormula(qNode)))
+                    val line = selectedLines.first { it.formula == implication }.lineNumber
+                    Suggestion(conclusion, listOf(line))
                 }
+
             }
             InferenceRule.SIMPLIFICATION -> {
-                val conjunctions = premises.filter { WffParser.parse(it) is FormulaNode.BinaryOpNode && (WffParser.parse(it) as FormulaNode.BinaryOpNode).operator == AvailableTiles.and }
+                val conjunctions = selectedFormulas.filter {
+                            WffParser.parse(it) is FormulaNode.BinaryOpNode &&
+                            (WffParser.parse(it) as FormulaNode.BinaryOpNode).operator == AvailableTiles.and }
                 conjunctions.flatMap { conj ->
                     val node = WffParser.parse(conj) as FormulaNode.BinaryOpNode
-                    listOf(treeToFormula(node.left), treeToFormula(node.right))
+                    val line = selectedLines.first { it.formula == conj }.lineNumber
+                    listOf(
+                        Suggestion(treeToFormula(node.left), listOf(line)),
+                        Suggestion(treeToFormula(node.right), listOf(line))
+                    )
                 }
             }
             InferenceRule.ADDITION -> {
-                if (premises.size < 2) return emptyList()
-                premises.flatMap { p1 -> premises.filter { it != p1 }.map {
-                    p2 -> ForwardRuleGenerators.fOr(p1, p2)
-                } }
+                if (selectedLines.isEmpty()) return emptyList()
+                val allKnownFormulas = fullProof.lines
+                selectedLines.flatMap { p1 ->
+                    allKnownFormulas.filter { p2 -> p1.lineNumber != p2.lineNumber }.flatMap { p2 ->
+                        listOf(
+                            Suggestion(fOr(p1.formula, p2.formula), listOf(p1.lineNumber)),
+                            Suggestion(fOr(p2.formula, p1.formula), listOf(p1.lineNumber))
+                        )
+                    }
+                }
             }
             InferenceRule.CONJUNCTION -> {
-                if (premises.size < 2) return emptyList()
-                premises.flatMap { p1 -> premises.filter { it != p1 }.map {
-                    p2 -> smartAnd(p1, p2)
-                } }
+                if (selectedLines.size < 2) return emptyList()
+                selectedLines.flatMap { p1 ->
+                    selectedLines.filter { it.lineNumber != p1.lineNumber }.map { p2 ->
+                        Suggestion(smartAnd(p1.formula, p2.formula), listOf(p1.lineNumber, p2.lineNumber))
+                    }
+                }
             }
         }.distinct()
     }
