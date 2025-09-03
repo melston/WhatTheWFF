@@ -113,19 +113,6 @@ object ProblemGenerator {
 
     private val variables = AvailableTiles.variables
 
-//    private fun <T> List<T>.weightedRandomOrNull(getWeight: (T) -> Double): T? {
-//        if (this.isEmpty()) return null
-//        val totalWeight = this.sumOf(getWeight)
-//        if (totalWeight <= 0) return this.randomOrNull() // Fallback if all weights are zero
-//
-//        var random = Math.random() * totalWeight
-//        for (item in this) {
-//            random -= getWeight(item)
-//            if (random <= 0) return item
-//        }
-//        return this.last() // Fallback in case of rounding errors
-//    }
-
     /**
      * Phase 1: Builds a complete, solvable proof in memory.
      */
