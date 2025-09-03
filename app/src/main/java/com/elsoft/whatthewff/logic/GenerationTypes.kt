@@ -1,10 +1,5 @@
 package com.elsoft.whatthewff.logic
 
-import com.elsoft.whatthewff.logic.AvailableTiles.and
-import com.elsoft.whatthewff.logic.AvailableTiles.iff
-import com.elsoft.whatthewff.logic.AvailableTiles.implies
-import com.elsoft.whatthewff.logic.AvailableTiles.or
-
 /**
  * Represents a single step in a generated proof, linking a formula to its justification.
  */
@@ -17,7 +12,7 @@ data class ForwardRule(
     val name: String,
     val weight: Double, // the initial chance of this rule being selected.
     val canApply: (knownFormulas: List<Formula>) -> Boolean,
-    val generate: (knownFormulas: List<Formula>) -> ProofStep?
+    val generate: (knownFormulas: List<Formula>) -> List<ProofStep>?
 )
 
 /**

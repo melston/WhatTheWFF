@@ -17,7 +17,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
      */
-    public fun fAnd (f1: Formula, f2: Formula) = Formula(
+    fun fAnd (f1: Formula, f2: Formula) = Formula(
         listOf(AvailableTiles.leftParen) +
                 f1.tiles +
                 listOf(AvailableTiles.and) +
@@ -28,7 +28,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
      */
-    public fun fOr (f1: Formula, f2: Formula) = Formula(
+    fun fOr (f1: Formula, f2: Formula) = Formula(
         listOf(AvailableTiles.leftParen) +
                 f1.tiles +
                 listOf(AvailableTiles.or) +
@@ -39,7 +39,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
      */
-    public fun fImplies (f1: Formula, f2: Formula) = Formula (
+    fun fImplies (f1: Formula, f2: Formula) = Formula (
         listOf(AvailableTiles.leftParen) +
                 f1.tiles +
                 listOf(AvailableTiles.implies) +
@@ -50,7 +50,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes one formula (P) and creates its negation (¬P).
      */
-    public fun fNeg (f1: Formula) = Formula (listOf(AvailableTiles.not) + f1.tiles )
+    fun fNeg (f1: Formula) = Formula (listOf(AvailableTiles.not) + f1.tiles )
 
     val implicationIntroduction = ForwardRule(
         name = "Implication Introduction",
@@ -58,7 +58,8 @@ object ForwardRuleGenerators {
         canApply = { it.size >= 2 },
         generate = { knownFormulas ->
             val (p, q) = knownFormulas.shuffled().take(2)
-            ProofStep(fImplies(p, q), "II", listOf(p, q)) // Simplified justification
+            // Simplified justification
+            listOf(ProofStep(fImplies(p, q), "II", listOf(p, q)))
         }
     )
 
@@ -70,8 +71,32 @@ object ForwardRuleGenerators {
         weight = 10.1,
         canApply = { it.size >= 2 },
         generate = { knownFormulas ->
-            val (p, q) = knownFormulas.shuffled().take(2)
-            ProofStep(fAnd(p, q), "Conj.", listOf(p, q))
+            // Create all possible pairs of known formulas
+            knownFormulas.flatMap { p ->
+                knownFormulas.filter { q -> p != q }.flatMap { q ->
+                    listOf(
+                        ProofStep(fAnd(p, q), "Conj.", listOf(p, q)),
+                        ProofStep(fAnd(q, p), "Conj.", listOf(q, p))
+                    )
+                }
+            }.distinct() // Ensure no duplicate proof steps are generated
+        }
+    )
+
+    val addition = ForwardRule(
+        name = "Addition",
+        weight = 5.2,
+        canApply = { it.size >= 2 }, // Needs at least two formulas to pick from for P and Q
+        generate = { knownFormulas ->
+            // Create all possible pairs to form disjunctions
+            knownFormulas.flatMap { p ->
+                knownFormulas.filter { q -> p != q }.flatMap { q ->
+                    listOf(
+                        ProofStep(fOr(p, q), "Add.", listOf(p)),
+                        ProofStep(fOr(q, p), "Add.", listOf(q))
+                    )
+                }
+            }.distinct()
         }
     )
 
@@ -80,9 +105,8 @@ object ForwardRuleGenerators {
         weight = 7.5,
         canApply = { knownFormulas -> findAllModusPonensPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllModusPonensPairs(knownFormulas).randomOrNull()?.let { (implication, antecedent) ->
-                val consequent =
-                    treeToFormula((WffParser.parse(implication) as FormulaNode.BinaryOpNode).right)
+            findAllModusPonensPairs(knownFormulas).map { (implication, antecedent) ->
+                val consequent = treeToFormula((WffParser.parse(implication) as FormulaNode.BinaryOpNode).right)
                 ProofStep(consequent, "MP", listOf(implication, antecedent))
             }
         }
@@ -93,7 +117,7 @@ object ForwardRuleGenerators {
         weight = 7.75,
         canApply = { knownFormulas -> findAllModusTollensPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllModusTollensPairs(knownFormulas).randomOrNull()?.let { (implication, negConsequent) ->
+            findAllModusTollensPairs(knownFormulas).map { (implication, negConsequent) ->
                 val antecedent =
                     treeToFormula((WffParser.parse(implication) as FormulaNode.BinaryOpNode).left)
                 val negAntecedent = fNeg(antecedent)
@@ -107,7 +131,7 @@ object ForwardRuleGenerators {
         weight = 10.2,
         canApply = { knownFormulas -> findAllHypotheticalSyllogismPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllHypotheticalSyllogismPairs(knownFormulas).randomOrNull()?.let { (imp1, imp2, _) ->
+            findAllHypotheticalSyllogismPairs(knownFormulas).map { (imp1, imp2, _) ->
                 val pNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).left
                 val rNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
                 val pFormula = treeToFormula(pNode)
@@ -123,7 +147,7 @@ object ForwardRuleGenerators {
         weight = 10.3,
         canApply = { knownFormulas -> findAllDisjunctiveSyllogismPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllDisjunctiveSyllogismPairs(knownFormulas).randomOrNull()?.let { (disjunction, negation) ->
+            findAllDisjunctiveSyllogismPairs(knownFormulas).map { (disjunction, negation) ->
                 val disNode = WffParser.parse(disjunction) as FormulaNode.BinaryOpNode
                 // negation contains the operator and the negated formula.  We will need to see if
                 // the negated formula is the same as either of the disjuncts.  So we have to
@@ -149,7 +173,7 @@ object ForwardRuleGenerators {
         weight = 10.4,
         canApply = { knownFormulas -> findAllConstructiveDilemmaPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllConstructiveDilemmaPairs(knownFormulas).randomOrNull()?.let { (imp1, imp2, dis) ->
+            findAllConstructiveDilemmaPairs(knownFormulas).map { (imp1, imp2, dis) ->
                 val qNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).right
                 val sNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
                 val qFormula = treeToFormula(qNode)
@@ -165,7 +189,7 @@ object ForwardRuleGenerators {
         weight = 5.0,
         canApply = { knownFormulas -> findAllAbsorptionPairs(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllAbsorptionPairs(knownFormulas).randomOrNull()?.let { premise ->
+            findAllAbsorptionPairs(knownFormulas).map { premise ->
                 val pNode = (WffParser.parse(premise) as FormulaNode.BinaryOpNode).left
                 val qNode = (WffParser.parse(premise) as FormulaNode.BinaryOpNode).right
                 val pFormula = treeToFormula(pNode)
@@ -184,26 +208,13 @@ object ForwardRuleGenerators {
         weight = 5.1,
         canApply = { knownFormulas -> findAllConjunctions(knownFormulas).isNotEmpty() },
         generate = { knownFormulas ->
-            findAllConjunctions(knownFormulas).randomOrNull()?.let { premise ->
+            findAllConjunctions(knownFormulas).flatMap { premise ->
                 val node = WffParser.parse(premise) as FormulaNode.BinaryOpNode
-                // Randomly choose to conclude the left or right side
-                val conclusionNode = if (Math.random() > 0.5) node.left else node.right
-                val conclusion = treeToFormula(conclusionNode)
-                ProofStep(conclusion, "Simp.", listOf(premise))
+                // Create two possible steps, one for each side of the conjunction
+                val step1 = ProofStep(treeToFormula(node.left), "Simp.", listOf(premise))
+                val step2 = ProofStep(treeToFormula(node.right), "Simp.", listOf(premise))
+                listOf(step1, step2)
             }
-        }
-    )
-
-    val addition = ForwardRule(
-        name = "Addition",
-        weight = 5.2,
-        canApply = { it.size >= 2 }, // Needs at least two formulas to pick from for P and Q
-        generate = { knownFormulas ->
-            // The rule is P |- (P ∨ Q). We need a P and we need to invent a Q.
-            // For simplicity, we'll pick both P and Q from the known formulas.
-            val (p, q) = knownFormulas.shuffled().take(2)
-            val conclusion = fOr(p, q)
-            ProofStep(conclusion, "Add.", listOf(p))
         }
     )
 
@@ -212,7 +223,7 @@ object ForwardRuleGenerators {
                                absorption, simplification, addition)
 
     // For building base premises
-    val simpleCompositionStrategies = listOf(conjunction, implicationIntroduction)
+//    val simpleCompositionStrategies = listOf(conjunction, implicationIntroduction)
 
     ////////////// HELPER FUNCTIONS //////////////
 
@@ -368,7 +379,7 @@ object ForwardRuleGenerators {
     /**
      * Converts a FormulaNode to a Formula.
      */
-    public fun treeToFormula(node: FormulaNode): Formula {
+    fun treeToFormula(node: FormulaNode): Formula {
         val tiles = mutableListOf<LogicTile>()
 
         fun getPrecedence(op: LogicTile?): Int {

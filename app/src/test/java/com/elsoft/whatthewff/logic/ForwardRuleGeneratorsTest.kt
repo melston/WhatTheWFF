@@ -27,14 +27,20 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `conjunction generates a valid conjunction`() {
         val known = listOf(f("p"), f("q"))
-        val step = ForwardRuleGenerators.conjunction.generate(known)
-        assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be Conj.",
-                     "Conj.", step!!.justification)
-        // The result could be (p∧q) or (q∧p)
-        val possibleOutcomes = setOf("(p∧q)", "(q∧p)")
-        assertTrue("Result formula is not a valid conjunction",
-                   possibleOutcomes.contains(step.formula.stringValue))
+        val steps = ForwardRuleGenerators.conjunction.generate(known)
+        assertNotNull("Generate should produce a step", steps)
+        steps?.forEach { step ->
+            assertEquals(
+                "Justification should be Conj.",
+                "Conj.", step.justification
+            )
+            // The result could be (p∧q) or (q∧p)
+            val possibleOutcomes = setOf("(p∧q)", "(q∧p)")
+            assertTrue(
+                "Result formula is not a valid conjunction",
+                possibleOutcomes.contains(step.formula.stringValue)
+            )
+        }
     }
 
     @Test
@@ -53,12 +59,18 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `modusPonens generates correct consequent`() {
         val known = listOf(f("(p→q)"), f("p"))
-        val step = ForwardRuleGenerators.modusPonens.generate(known)
-        assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be MP",
-                     "MP", step!!.justification)
-        assertEquals("Result should be the consequent 'q'",
-                     "q", step.formula.stringValue)
+        val steps = ForwardRuleGenerators.modusPonens.generate(known)
+        assertNotNull("Generate should produce a step", steps)
+        steps?.forEach { step ->
+            assertEquals(
+                "Justification should be MP",
+                "MP", step.justification
+            )
+            assertEquals(
+                "Result should be the consequent 'q'",
+                "q", step.formula.stringValue
+            )
+        }
     }
 
     @Test
@@ -74,12 +86,18 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `modusTollens generates correct negated antecedent`() {
         val known = listOf(f("(p→q)"), f("¬q"))
-        val step = ForwardRuleGenerators.modusTollens.generate(known)
-        assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be MT",
-                     "MT", step!!.justification)
-        assertEquals("Result should be the negated antecedent '¬p'",
-                     "¬p", step.formula.stringValue)
+        val steps = ForwardRuleGenerators.modusTollens.generate(known)
+        assertNotNull("Generate should produce a step", steps)
+        steps?.forEach { step ->
+            assertEquals(
+                "Justification should be MT",
+                "MT", step.justification
+            )
+            assertEquals(
+                "Result should be the negated antecedent '¬p'",
+                "¬p", step.formula.stringValue
+            )
+        }
     }
 
     @Test
@@ -95,12 +113,19 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `hypotheticalSyllogism generates correct chained implication`() {
         val known = listOf(f("(p→q)"), f("(q→r)"))
-        val step = ForwardRuleGenerators.hypotheticalSyllogism.generate(known)
-        assertNotNull("Generate should produce a step", step)
-        assertEquals("Justification should be HS",
-                     "HS", step!!.justification)
-        assertEquals("Result should be the chained implication '(p→r)'",
-                     "(p→r)", step.formula.stringValue)
+        val steps = ForwardRuleGenerators.hypotheticalSyllogism.generate(known)
+        assertNotNull("Generate should produce a step", steps)
+        assertTrue("Generate should produce a single step", steps!!.size == 1)
+        steps.forEach { step ->
+            assertEquals(
+                "Justification should be HS",
+                "HS", step.justification
+            )
+            assertEquals(
+                "Result should be the chained implication '(p→r)'",
+                "(p→r)", step.formula.stringValue
+            )
+        }
     }
 
     @Test
@@ -119,16 +144,26 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `disjunctiveSyllogism generates correct conclusion`() {
         val known1 = listOf(f("(p∨q)"), f("¬p"))
-        val step1 = ForwardRuleGenerators.disjunctiveSyllogism.generate(known1)
-        assertNotNull("Generate should produce a step", step1)
-        assertEquals("Result of (p∨q), ¬p should be q",
-                     "q", step1!!.formula.stringValue)
+        val step1s = ForwardRuleGenerators.disjunctiveSyllogism.generate(known1)
+        assertNotNull("Generate should produce a step", step1s)
+        assertTrue( "Result of (p∨q), ¬p should have size 1", step1s!!.size == 1)
+        step1s.forEach { step1 ->
+            assertEquals(
+                "Result of (p∨q), ¬p should be q",
+                "q", step1.formula.stringValue
+            )
+        }
 
         val known2 = listOf(f("(p∨q)"), f("¬q"))
-        val step2 = ForwardRuleGenerators.disjunctiveSyllogism.generate(known2)
-        assertNotNull("Generate should produce a step", step2)
-        assertEquals("Result of (p∨q), ¬q should be p",
-                     "p", step2!!.formula.stringValue)
+        val step2s = ForwardRuleGenerators.disjunctiveSyllogism.generate(known2)
+        assertNotNull("Generate should produce a step", step2s)
+        assertTrue( "Result of (p∨q), ¬p should have size 1", step2s!!.size == 1)
+        step2s.forEach { step2 ->
+            assertEquals(
+                "Result of (p∨q), ¬p should be p",
+                "p", step2.formula.stringValue
+            )
+        }
     }
 
     @Test
@@ -142,11 +177,14 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `simplification generates one of the conjuncts`() {
         val known = listOf(f("(p∧q)"))
-        val step = ForwardRuleGenerators.simplification.generate(known)
-        assertNotNull("Generate should produce a step", step)
+        val steps = ForwardRuleGenerators.simplification.generate(known)
+        assertNotNull("Generate should produce a step", steps)
+        assertTrue("Generate should produce two possible steps", steps!!.size == 2)
         val possibleOutcomes = setOf("p", "q")
-        assertTrue("Result must be one of the conjuncts",
-                   possibleOutcomes.contains(step!!.formula.stringValue))
+        steps.forEach { step ->
+            assertTrue("Result must be one of the conjuncts",
+                       possibleOutcomes.contains(step.formula.stringValue))
+        }
     }
 
     @Test
@@ -161,14 +199,21 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `addition generates a valid disjunction`() {
         val known = listOf(f("p"), f("q"))
-        val step = ForwardRuleGenerators.addition.generate(known)
-        assertNotNull("Generate should produce a step", step)
+        val steps = ForwardRuleGenerators.addition.generate(known)
+        assertNotNull("Generate should produce a step", steps)
+        assertTrue("Generate should produce two possible steps", steps!!.size == 2)
         val possibleOutcomes = setOf("(p∨q)", "(q∨p)")
-        assertTrue("Result formula is not a valid disjunction",
-                   possibleOutcomes.contains(step!!.formula.stringValue))
-        assertTrue("Premise for addition must be one of the disjuncts",
-                   step.premises.size == 1 &&
-                           (step.premises[0] == f("p") ||
-                                   step.premises[0] == f("q")))
+        steps.forEach { step ->
+            assertTrue(
+                "Result formula is not a valid disjunction",
+                possibleOutcomes.contains(step.formula.stringValue)
+            )
+            assertTrue(
+                "Premise for addition must be one of the disjuncts",
+                step.premises.size == 1 &&
+                        (step.premises[0] == f("p") ||
+                                step.premises[0] == f("q"))
+            )
+        }
     }
 }

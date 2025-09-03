@@ -113,104 +113,111 @@ object ProblemGenerator {
 
     private val variables = AvailableTiles.variables
 
-    private fun <T> List<T>.weightedRandomOrNull(getWeight: (T) -> Double): T? {
-        if (this.isEmpty()) return null
-        val totalWeight = this.sumOf(getWeight)
-        if (totalWeight <= 0) return this.randomOrNull() // Fallback if all weights are zero
-
-        var random = Math.random() * totalWeight
-        for (item in this) {
-            random -= getWeight(item)
-            if (random <= 0) return item
-        }
-        return this.last() // Fallback in case of rounding errors
-    }
+//    private fun <T> List<T>.weightedRandomOrNull(getWeight: (T) -> Double): T? {
+//        if (this.isEmpty()) return null
+//        val totalWeight = this.sumOf(getWeight)
+//        if (totalWeight <= 0) return this.randomOrNull() // Fallback if all weights are zero
+//
+//        var random = Math.random() * totalWeight
+//        for (item in this) {
+//            random -= getWeight(item)
+//            if (random <= 0) return item
+//        }
+//        return this.last() // Fallback in case of rounding errors
+//    }
 
     /**
      * Phase 1: Builds a complete, solvable proof in memory.
      */
-    private fun buildProof(generationSteps: Int, availableVars: MutableList<LogicTile>): Pair<List<Formula>, Formula> {
-        // --- Stage 1: Create Atomic Components ---
-        val numBaseAtoms = (generationSteps / 2).coerceAtLeast(2)
-        val atoms = (1..numBaseAtoms).mapNotNull {
+    private fun buildProof(difficulty: Int, availableVars: MutableList<LogicTile>): Pair<List<ProofStep>, List<Formula>> {
+        val proof = mutableListOf<ProofStep>()
+        val basePremises = mutableListOf<Formula>()
+        val numBasePremises = (difficulty / 2).coerceIn(2, 4)
+
+        for (i in 1..numBasePremises) {
             if (availableVars.isNotEmpty()) {
                 val variable = availableVars.removeAt(0)
-                if (Math.random() > 0.5) Formula(listOf(variable))
-                else ForwardRuleGenerators.fNeg(Formula(listOf(variable)))
-            } else null
-        }.toMutableList()
-
-        // --- Stage 2: Compose Complex Base Premises ---
-        val numComplexPremises = (generationSteps / 2).coerceAtLeast(1)
-        val basePremises = mutableListOf<Formula>()
-        if (atoms.isNotEmpty()) basePremises.add(atoms.removeAt(0))
-        if (atoms.isNotEmpty()) basePremises.add(atoms.removeAt(0))
-
-        for (i in 0 until numComplexPremises) {
-            if (atoms.size < 2) break
-            val strategy = ForwardRuleGenerators.simpleCompositionStrategies.random()
-            val sources = atoms.shuffled().take(2)
-            atoms.remove(sources[0])
-            atoms.remove(sources[1])
-            val newComplexPremise = strategy.generate(sources)?.formula
-            if (newComplexPremise != null) {
-                basePremises.add(newComplexPremise)
+                val premiseFormula = if (Math.random() > 0.5) {
+                    Formula(listOf(variable))
+                } else {
+                    Formula(listOf(AvailableTiles.not, variable))
+                }
+                basePremises.add(premiseFormula)
+                proof.add(ProofStep(premiseFormula, "Premise", emptyList()))
             }
         }
-        basePremises.addAll(atoms)
 
-        // --- Stage 3: Build the Proof ---
-        val knownFormulas = basePremises.toMutableList()
-        val proofSteps = mutableListOf<ProofStep>()
+        val generationSteps = difficulty
         val ruleWeights = ForwardRuleGenerators.allStrategies.associateWith { it.weight }.toMutableMap()
 
-        for (i in 0 until generationSteps) {
-            val applicableRules = ForwardRuleGenerators.allStrategies.filter { it.canApply(knownFormulas) }
-            if (applicableRules.isEmpty()) break
+        for (i in 1..generationSteps) {
+            val knownFormulas = proof.map { it.formula }
 
-            val strategy = applicableRules.weightedRandomOrNull { ruleWeights[it]!! }
-            if (strategy != null) {
-                val newStep = strategy.generate(knownFormulas)
-                if (newStep != null && !knownFormulas.contains(newStep.formula)) {
-                    proofSteps.add(newStep)
-                    knownFormulas.add(newStep.formula)
+            val applicableStrategies = ForwardRuleGenerators.allStrategies.filter { it.canApply(knownFormulas) }
+            if (applicableStrategies.isEmpty()) break
 
-                    // Temporarily reduce the weight of the used rule to encourage variety
-                    ruleWeights[strategy] = ruleWeights[strategy]!! * 0.5
+            // Weighted random selection
+            val totalWeight = applicableStrategies.sumOf { ruleWeights[it] ?: 0.0 }
+            if (totalWeight <= 0) break
+            var randomPoint = Math.random() * totalWeight
+            var chosenStrategy: ForwardRule? = null
+            for (strategy in applicableStrategies) {
+                randomPoint -= ruleWeights[strategy] ?: 0.0
+                if (randomPoint <= 0) {
+                    chosenStrategy = strategy
+                    break
                 }
             }
+            if (chosenStrategy == null) continue // Should not happen if totalWeight > 0
 
-            // Slightly recharge all weights to prevent any rule from becoming permanently unlikely
-            ruleWeights.keys.forEach { rule ->
-                ruleWeights[rule] = (ruleWeights[rule]!! + 0.1).coerceAtMost(rule.weight)
+            val newSteps = chosenStrategy.generate(knownFormulas)
+            val stepToAdd = newSteps?.randomOrNull()
+
+            if (stepToAdd != null && !knownFormulas.contains(stepToAdd.formula)) {
+                proof.add(stepToAdd)
+                // Reduce the weight of the used strategy to encourage variety
+                ruleWeights[chosenStrategy] = (ruleWeights[chosenStrategy] ?: 0.0) / 2
             }
         }
-
-        val finalConclusion = proofSteps.lastOrNull()?.formula ?: basePremises.last()
-        return Pair(basePremises, finalConclusion)
+        return Pair(proof, basePremises)
     }
 
     /**
      * Phase 2: Selects which lines from the full proof to give to the user as premises.
      */
-    private fun selectPremises(basePremises: List<Formula>, conclusion: Formula, difficulty: Int): List<Formula> {
-        // This function can be made smarter in the future to "prune" the proof tree.
-        // For now, it returns all base premises needed.
-        return basePremises
+    private fun selectPremises(fullProof: List<ProofStep>, basePremises: List<Formula>, difficulty: Int): List<Formula> {
+        if (fullProof.isEmpty()) return emptyList()
+
+        val derivedSteps = fullProof.filter { it.justification != "Premise" }
+        val stepsToHide = difficulty.coerceAtMost(derivedSteps.size)
+        val derivedLinesToKeepCount = derivedSteps.size - stepsToHide
+
+        val finalPremises = basePremises.toMutableList()
+        if (derivedLinesToKeepCount > 0) {
+            finalPremises.addAll(
+                derivedSteps.take(derivedLinesToKeepCount).map { it.formula }
+            )
+        }
+
+        return finalPremises
     }
 
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun generate(difficulty: Int): Problem {
-        val allVars = variables.shuffled().toMutableList()
-        val generationSteps = (difficulty * 1.5).toInt().coerceAtLeast(2)
+        val availableVars = variables.shuffled().toMutableList()
 
-        val (basePremises, finalConclusion) = buildProof(generationSteps, allVars)
-        val selectedPremises = selectPremises(basePremises, finalConclusion, difficulty)
+        val (fullProof, basePremises) = buildProof(difficulty, availableVars)
+        if (fullProof.isEmpty()) {
+            return Problem("fallback", "Error", listOf(Formula(listOf(AvailableTiles.p))), Formula(listOf(AvailableTiles.p)), 1)
+        }
+
+        val finalConclusion = fullProof.last().formula
+        val premises = selectPremises(fullProof, basePremises, difficulty)
 
         return Problem(
             id = "gen_${System.currentTimeMillis()}",
             name = "Generated Problem (Lvl $difficulty)",
-            premises = selectedPremises.distinct().shuffled(),
+            premises = premises.distinct().shuffled(),
             conclusion = finalConclusion,
             difficulty = difficulty
         )
