@@ -30,38 +30,22 @@ data class Problem(
  * experience or a "campaign" mode.
  */
 object ProblemSets {
-    /**
-     * A simple DSL/parser function that converts a readable string into a Formula object.
-     * This allows for clear and concise problem definitions.
-     * Example: f("(p→q)")
-     */
-    fun f(formulaString: String): Formula {
-        // Create a quick lookup map for mapping characters to their LogicTile objects.
-        val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
-
-        // Map each character in the string to its corresponding tile.
-        // If a character isn't a valid symbol (like whitespace), it's ignored.
-        val tiles = formulaString.mapNotNull { char ->
-            tileMap[char.toString()]
-        }
-        return Formula(tiles)
-    }
 
     // MODIFIED: All problems now use the highly readable string-based DSL.
     val chapter1_ModusPonens = listOf(
         Problem(
             id = "1-1",
             name = "Simple Modus Ponens",
-            premises = listOf(f("(p→q)"),
-                              f("p")),
-            conclusion = f("q"),
+            premises = listOf(WffParser.f("(p→q)"),
+                              WffParser.f("p")),
+            conclusion = WffParser.f("q"),
             difficulty = 1),
         Problem(
             id = "1-2",
             name = "Modus Ponens with Negation",
-            premises =  listOf(f("(¬r→s)"),
-                               f("¬r")),
-            conclusion = f("s"),
+            premises =  listOf(WffParser.f("(¬r→s)"),
+                               WffParser.f("¬r")),
+            conclusion = WffParser.f("s"),
             difficulty = 2)
     )
 
@@ -69,17 +53,17 @@ object ProblemSets {
         Problem(
             id = "2-1",
             name = "Simple Modus Tollens",
-            premises = listOf(f("(p→q)"),
-                              f("q")),
-            conclusion = f("p"),
+            premises = listOf(WffParser.f("(p→q)"),
+                              WffParser.f("q")),
+            conclusion = WffParser.f("p"),
             difficulty = 1
         ),
         Problem(
             id = "2-2",
             name = "Modus Tollens with Negation",
-            premises = listOf(f("(p→q)"),
-                              f("¬q")),
-            conclusion = f("¬p"),
+            premises = listOf(WffParser.f("(p→q)"),
+                              WffParser.f("¬q")),
+            conclusion = WffParser.f("¬p"),
             difficulty = 2
         )
     )
@@ -89,10 +73,10 @@ object ProblemSets {
         Problem(
             id = "3-1",
             name = "Multi-Step Proof",
-            premises = listOf(f("(p→q)"),
-                              f("(q→r)"),
-                              f("p")),
-            conclusion = f("r"),
+            premises = listOf(WffParser.f("(p→q)"),
+                              WffParser.f("(q→r)"),
+                              WffParser.f("p")),
+            conclusion = WffParser.f("r"),
             difficulty = 3
         )
     )

@@ -24,6 +24,23 @@ object WffParser {
     }
 
     /**
+     * A simple DSL/parser function that converts a readable string into a Formula object.
+     * This allows for clear and concise problem definitions.
+     * Example: f("(p→q)")
+     */
+    fun f(formulaString: String): Formula {
+        // Create a quick lookup map for mapping characters to their LogicTile objects.
+        val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
+
+        // Map each character in the string to its corresponding tile.
+        // If a character isn't a valid symbol (like whitespace), it's ignored.
+        val tiles = formulaString.mapNotNull { char ->
+            tileMap[char.toString()]
+        }
+        return Formula(tiles)
+    }
+
+    /**
      * Public entry point for parsing.
      */
     fun parse(formula: Formula): FormulaNode? {
