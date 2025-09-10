@@ -90,7 +90,7 @@ fun SymbolPalette(onTileTapped: (LogicTile) -> Unit) {
     data class TileSectionInfo(val title: String, val tiles: List<LogicTile>)
 
     val tileSections = listOf(
-        TileSectionInfo("Variables", AvailableTiles.variables),
+        TileSectionInfo("Variables", AvailableTiles.problemVariables),
         TileSectionInfo("Connectors", AvailableTiles.connectors)
     )
     Column(modifier = Modifier.padding(vertical = 8.dp)) {

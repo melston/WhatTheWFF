@@ -65,6 +65,7 @@ import com.elsoft.whatthewff.logic.Problem
 import com.elsoft.whatthewff.logic.Proof
 import com.elsoft.whatthewff.logic.ProofLine
 import com.elsoft.whatthewff.logic.ProofValidator
+import com.elsoft.whatthewff.logic.SymbolType
 import com.elsoft.whatthewff.logic.WffParser
 import com.elsoft.whatthewff.ui.features.proof.components.AddLineDialog
 import com.elsoft.whatthewff.ui.features.proof.components.DeleteConfirmationDialog
@@ -183,6 +184,16 @@ fun ProofScreen(
     var showAddLineDialog by remember { mutableStateOf(false) }
     var lineToDelete by remember { mutableStateOf<Int?>(null) }
     val showDeleteDialog = lineToDelete != null
+
+    // --- KEY CHANGE: Dynamically create the symbol palette based on the problem ---
+    val paletteVars = remember(problem) {
+        val variables = (problem.premises.flatMap { it.tiles } + problem.conclusion.tiles)
+            .filter { it.type == SymbolType.VARIABLE }
+            .distinctBy { it.symbol }
+            .sortedBy { it.symbol }
+
+        variables
+    }
 
     // --- UI Structure ---
     DragAndDropContainer {
@@ -393,7 +404,7 @@ fun ProofScreen(
                     }
                 )
 
-                SymbolPalette()
+                SymbolPalette(variables = paletteVars)
 
                 Button(
                     onClick = {

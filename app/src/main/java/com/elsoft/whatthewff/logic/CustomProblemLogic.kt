@@ -111,7 +111,9 @@ object ProblemFileParser {
             } else if (trimmedLine.isNotEmpty()) {
                 when (mode) {
                     ParseMode.PREMISES -> {
-                        parseFormulaWithAliases(trimmedLine)?.let { currentPremises.add(it) }
+                        parseFormulaWithAliases(trimmedLine)?.let {
+                            currentPremises.add(it)
+                        }
                     }
                     ParseMode.GOAL -> {
                         currentGoal = parseFormulaWithAliases(trimmedLine)

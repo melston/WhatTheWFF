@@ -87,7 +87,7 @@ object ProblemSets {
  */
 object ProblemGenerator {
 
-    private val variables = AvailableTiles.variables
+    private val variables = AvailableTiles.problemVariables
 
     /**
      * Phase 1: Builds a complete, solvable proof in memory.

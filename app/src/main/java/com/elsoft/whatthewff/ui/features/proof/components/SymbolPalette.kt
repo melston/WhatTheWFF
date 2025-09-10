@@ -8,24 +8,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.elsoft.whatthewff.logic.AvailableTiles
+import com.elsoft.whatthewff.logic.LogicTile
 import com.elsoft.whatthewff.ui.features.proof.DragData
 import com.elsoft.whatthewff.ui.features.proof.DraggableItem
 
 @Composable
-fun SymbolPalette() {
-    val variables = AvailableTiles.variables
+fun SymbolPalette(variables: List<LogicTile>) {
     val operators = AvailableTiles.connectors
     LazyRow(
         modifier = Modifier.Companion
             .fillMaxWidth()
             .padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.Companion.CenterHorizontally)
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         items(variables) { symbol ->
             DraggableItem(dataToDrop = DragData.NewTile(symbol)) {
@@ -43,7 +42,7 @@ fun SymbolPalette() {
         modifier = Modifier.Companion
             .fillMaxWidth()
             .padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.Companion.CenterHorizontally)
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         items(operators) { operator ->
             DraggableItem(dataToDrop = DragData.NewTile(operator)) {

@@ -56,14 +56,20 @@ data class Formula(val tiles: List<LogicTile>) {
  */
 object AvailableTiles {
     // Variables
-    val p = LogicTile("p", SymbolType.VARIABLE)
-    val q = LogicTile("q", SymbolType.VARIABLE)
-    val r = LogicTile("r", SymbolType.VARIABLE)
-    val s = LogicTile("s", SymbolType.VARIABLE)
-    val t = LogicTile("t", SymbolType.VARIABLE)
-    val u = LogicTile("u", SymbolType.VARIABLE)
-    val v = LogicTile("v", SymbolType.VARIABLE)
-    val w = LogicTile("w", SymbolType.VARIABLE)
+
+    // This val is the complete list of characters used as variables
+    // This is used by the parser to parse WFFs from any source that may
+    // use any single character as a variable.
+    val allVariables = (('a'..'z').toList() + ('A'..'Z').toList())
+        .map {
+            LogicTile(it.toString(), SymbolType.VARIABLE)
+        }
+
+    // This next val is for the variables used in problem generation.
+    val problemVariables = allVariables.filter { it.symbol in "p".."w" }
+
+    // The following is used as a fallback in a couple of instances
+    val p = allVariables.filter { it.symbol == "p" }.first()
 
     // Operators
     val not = LogicTile("¬", SymbolType.UNARY_OPERATOR)
@@ -79,11 +85,10 @@ object AvailableTiles {
     /**
      * A complete list of all defined tiles. We'll use this to populate the UI.
      */
-    val variables = listOf(p, q, r, s, t, u, v, w)
     val operators = listOf(not, and, or, implies, iff)
     val grouping = listOf(leftParen, rightParen)
     val connectors = operators + grouping
-    val allTiles = variables + operators + grouping
+    val allTiles = allVariables + operators + grouping
 }
 
 /**
