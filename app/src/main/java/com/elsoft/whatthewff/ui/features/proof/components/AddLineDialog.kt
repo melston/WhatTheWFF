@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.elsoft.whatthewff.logic.AvailableTiles
+import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.Formula
 import com.elsoft.whatthewff.logic.FormulaNode
 import com.elsoft.whatthewff.logic.ForwardRuleGenerators
@@ -285,14 +286,35 @@ private object ProofSuggester {
             }
             InferenceRule.CONSTRUCTIVE_DILEMMA -> {
                 ForwardRuleGenerators.findAllConstructiveDilemmaPairs(selectedFormulas).map {
-                            (conjImp, disj, _) ->
-                    val conjImpNode = WffParser.parse(conjImp) as FormulaNode.BinaryOpNode
-                    val qNode = (conjImpNode.left as FormulaNode.BinaryOpNode).right
-                    val sNode = (conjImpNode.right as FormulaNode.BinaryOpNode).right
-                    val conclusion = fOr(treeToFormula(qNode), treeToFormula(sNode))
-                    val conjLine = selectedLines.first { it.formula == conjImp }.lineNumber
-                    val disjLine = selectedLines.first { it.formula == disj }.lineNumber
-                    Suggestion(conclusion, listOf(conjLine, disjLine))
+                    (imp1, imp2, disj) ->
+                    // Correctly deconstruct the two separate implications
+                    // Given implications of (p → q) and (r → s) and a disjunction (p ∨ r),
+                    // construct the conclusion (q ∨ s)
+                    val qNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).right
+                    val sNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).right
+                    val conclusion = smartOr(treeToFormula(qNode), treeToFormula(sNode))
+
+                    // Find the line numbers for all three premises
+                    val imp1Line = selectedLines.firstOrNull { it.formula == imp1 }?.lineNumber
+                    val imp2Line = selectedLines.firstOrNull { it.formula == imp2 }?.lineNumber
+                    val disjLine = selectedLines.firstOrNull { it.formula == disj }?.lineNumber
+
+                    // This handles the case where one of the implications came from a conjunction
+                    val conjPremise = selectedLines.firstOrNull { line ->
+                        val node = WffParser.parse(line.formula)
+
+                        node is FormulaNode.BinaryOpNode &&
+                        node.operator == and &&
+                        treeToFormula(node.left) == imp1 &&
+                        treeToFormula(node.right) == imp2
+                    }
+
+                    val sourceLines = if (conjPremise != null && disjLine != null) {
+                        listOf(conjPremise.lineNumber, disjLine)
+                    } else {
+                        listOfNotNull(imp1Line, imp2Line, disjLine)
+                    }
+                    Suggestion(conclusion, sourceLines)
                 }
             }
             InferenceRule.ABSORPTION -> {

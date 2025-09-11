@@ -321,33 +321,67 @@ object ForwardRuleGenerators {
      * Function used in CD to find all possible combinations of formulas from the known formulas
      * list that are pairs of implications: (p → q), (r → s) where the disjunction of the
      * antecedents (p ∨ r) are also in the list.
+     *
+     * @return A list of triples containing the two implications and the disjunction of their
+     *         antecedent formulas {(p → q), (r → s), (p ∨ r)}.
      */
     fun findAllConstructiveDilemmaPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
         val triples = mutableListOf<Triple<Formula, Formula, Formula>>()
+
+        // 1. Find all available implications and disjunctions
         val implications = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
         }
         val disjunctions = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == or } ?: false
         }
+        val conjunctionsOfImplications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { node ->
+                   node is FormulaNode.BinaryOpNode && node.operator == and
+                && (WffParser.parse(treeToFormula(node.left))) is FormulaNode.BinaryOpNode
+                && ((WffParser.parse(treeToFormula(node.left)))
+                            as FormulaNode.BinaryOpNode).operator == implies
+                && (WffParser.parse(treeToFormula(node.right))) is FormulaNode.BinaryOpNode
+                && ((WffParser.parse(treeToFormula(node.right)))
+                            as FormulaNode.BinaryOpNode).operator == implies
+            } ?: false
+        }
 
-        for (imp1 in implications) {
-            for (imp2 in implications) {
-                if (imp1 == imp2) continue
+        // Combine standalone implications with those inside conjunctions
+        val allImplications = implications + conjunctionsOfImplications.flatMap { conj ->
+            val node = WffParser.parse(conj) as FormulaNode.BinaryOpNode
+            listOf(treeToFormula(node.left), treeToFormula(node.right))
+        }
 
-                val pNode = (WffParser.parse(imp1) as FormulaNode.BinaryOpNode).left
-                val rNode = (WffParser.parse(imp2) as FormulaNode.BinaryOpNode).left
-                val antecedent1 = treeToFormula(pNode)
-                val antecedent2 = treeToFormula(rNode)
+        if (allImplications.size < 2) return triples
 
-                for (dis in disjunctions) {
-                    val disNode = WffParser.parse(dis) as FormulaNode.BinaryOpNode
-                    val disLeft = treeToFormula(disNode.left)
-                    val disRight = treeToFormula(disNode.right)
+        // 2. Iterate through all combinations
+        for (i in allImplications.indices) {
+            for (j in i + 1 until allImplications.size) {
+                val imp1 = allImplications[i]
+                val imp2 = allImplications[j]
 
-                    if ((disLeft == antecedent1 && disRight == antecedent2) || (disLeft == antecedent2 && disRight == antecedent1)) {
-                        triples.add(Triple(imp1, imp2, dis))
-                    }
+                val node1 = WffParser.parse(imp1) as FormulaNode.BinaryOpNode
+                val node2 = WffParser.parse(imp2) as FormulaNode.BinaryOpNode
+                val pNode = node1.left
+                val rNode = node2.left
+
+                val pFormula = treeToFormula(pNode)
+                val rFormula = treeToFormula(rNode)
+
+                // 3. Look for a matching disjunction of their antecedents
+                val requiredDisj1 = fOr(pFormula, rFormula)
+                val requiredDisj2 = fOr(rFormula, pFormula)
+
+                // Compare the parsed syntax trees, not the raw Formulas
+                val reqNode1 = WffParser.parse(requiredDisj1)
+                val reqNode2 = WffParser.parse(requiredDisj2)
+
+                disjunctions.find { disj ->
+                    val disjNode = WffParser.parse(disj)
+                    disjNode == reqNode1 || disjNode == reqNode2
+                }?.let { disj ->
+                    triples.add(Triple(imp1, imp2, disj))
                 }
             }
         }
