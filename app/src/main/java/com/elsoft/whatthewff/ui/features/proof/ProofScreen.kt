@@ -4,6 +4,15 @@
 
 package com.elsoft.whatthewff.ui.features.proof
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -23,9 +32,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +62,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
@@ -62,6 +75,7 @@ import com.elsoft.whatthewff.logic.Justification
 import com.elsoft.whatthewff.logic.LogicTile
 import com.elsoft.whatthewff.logic.Problem
 import com.elsoft.whatthewff.logic.Proof
+import com.elsoft.whatthewff.logic.ProofExporter
 import com.elsoft.whatthewff.logic.ProofLine
 import com.elsoft.whatthewff.logic.ProofValidator
 import com.elsoft.whatthewff.logic.RuleGenerators
@@ -195,6 +209,25 @@ fun ProofScreen(
         variables
     }
 
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+
+    val fileSaverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/html"),
+        onResult = { uri: Uri? ->
+            uri?.let { fileUri ->
+                try {
+                    val htmlContent = ProofExporter.formatProofAsHtml(problem, proof)
+                    context.contentResolver.openOutputStream(fileUri)?.use { outputStream ->
+                        outputStream.write(htmlContent.toByteArray())
+                    }
+                } catch (e: Exception) {
+                    // Optionally show a toast or message on failure
+                }
+            }
+        }
+    )
+
     // --- UI Structure ---
     DragAndDropContainer {
         Scaffold(
@@ -206,6 +239,46 @@ fun ProofScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 "Back"
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showMenu = !showMenu }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Save Solution As...") }, // Changed label for clarity
+                                onClick = {
+                                    val defaultFileName = "Solution - ${problem.name.replace(" ", "_")}.html"
+                                    fileSaverLauncher.launch(defaultFileName)
+                                    showMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share Solution") },
+                                onClick = {
+                                    val htmlContent = ProofExporter.formatProofAsHtml(problem, proof)
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, htmlContent)
+                                        putExtra(Intent.EXTRA_SUBJECT, "Proof Solution: ${problem.name}")
+                                        type = "text/html"
+                                    }
+                                    val shareIntent = Intent.createChooser(sendIntent, "Share Proof")
+                                    context.startActivity(shareIntent)
+                                    showMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Print / Save as PDF") },
+                                onClick = {
+                                    printProof(context, problem, proof)
+                                    showMenu = false
+                                }
                             )
                         }
                     }
@@ -462,6 +535,36 @@ fun ProofScreen(
             }
         }
     }
+}
+
+/**
+ * Helper function to trigger the Android printing framework.
+ * It loads the generated HTML into an invisible WebView and asks the PrintManager
+ * to handle the printing or saving as a PDF.
+ */
+private fun printProof(context: Context, problem: Problem, proof: Proof) {
+    val htmlContent = ProofExporter.formatProofAsHtml(problem, proof)
+
+    // Create a WebView instance programmatically
+    val webView = WebView(context)
+    webView.webViewClient = object : WebViewClient() {
+        override fun onPageFinished(view: WebView, url: String) {
+            super.onPageFinished(view, url)
+
+            // Once the page is loaded, create the print job
+            val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val jobName = "Proof Solution - ${problem.name}"
+            val printAdapter = view.createPrintDocumentAdapter(jobName)
+
+            printManager.print(
+                jobName,
+                printAdapter,
+                PrintAttributes.Builder().build()
+            )
+        }
+    }
+    // Load our generated HTML into the WebView
+    webView.loadDataWithBaseURL(null, htmlContent, "text/HTML", "UTF-8", null)
 }
 
 // --- UI Sub-components ---
