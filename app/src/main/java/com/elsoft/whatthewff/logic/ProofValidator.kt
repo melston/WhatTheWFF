@@ -7,6 +7,8 @@ import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.not
 import com.elsoft.whatthewff.logic.AvailableTiles.or
+import com.elsoft.whatthewff.logic.RuleGenerators.fOr
+import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
 /**
  * A data class to hold the result of a proof validation.
@@ -85,7 +87,7 @@ object ProofValidator {
 
         val left = contradictionTree.left
         val right = contradictionTree.right
-        val negatedLeft = WffParser.parse(ForwardRuleGenerators.fNeg(ForwardRuleGenerators.treeToFormula(left)))
+        val negatedLeft = WffParser.parse(RuleGenerators.fNeg(RuleGenerators.treeToFormula(left)))
 
         if (negatedLeft != right) {
             return ValidationResult(false, "Line ${justification.contradictionLine} is not a valid contradiction (P and ¬P).", currentLineNumber)
@@ -93,7 +95,7 @@ object ProofValidator {
 
         // 3. Check that the final conclusion is the negation of the assumption
         val assumptionTree = WffParser.parse(assumptionLine.formula)
-        val negatedAssumption = WffParser.parse(ForwardRuleGenerators.fNeg(assumptionLine.formula))
+        val negatedAssumption = WffParser.parse(RuleGenerators.fNeg(assumptionLine.formula))
 
         if (conclusionTree != negatedAssumption) {
             return ValidationResult(false, "Conclusion must be the negation of the assumption on line ${justification.subproofStart}.", currentLineNumber)
@@ -137,20 +139,26 @@ object ProofValidator {
         provenTrees: Map<Int, FormulaNode>,
         currentLineNumber: Int
     ): ValidationResult {
-        val refTrees = justification.lineReferences.map { refNum ->
+        val refNodes = justification.lineReferences.map { refNum ->
             provenTrees[refNum] ?: return ValidationResult(false, "Line references non-existent line $refNum.")
         }
 
+        // Check if all referenced lines were found
+        if (refNodes.size != justification.lineReferences.size) {
+            return ValidationResult(false, "One or more reference lines could not be found.")
+        }
+
         return when (justification.rule) {
-            InferenceRule.MODUS_PONENS -> validateModusPonens(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.MODUS_TOLLENS -> validateModusTollens(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refTrees, currentLineNumber)
-            InferenceRule.ADDITION -> validateAddition(conclusionTree, refTrees, currentLineNumber)
+            InferenceRule.MODUS_PONENS -> validateModusPonens(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.MODUS_TOLLENS -> validateModusTollens(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refNodes, currentLineNumber)
+            InferenceRule.ADDITION -> validateAddition(conclusionTree, refNodes, currentLineNumber)
+            else -> ValidationResult(false, "Validation for ${justification.rule.ruleName} not implemented.")
         }
     }
 
@@ -319,46 +327,82 @@ object ProofValidator {
     /**
      * Validate Constructive Dilemma: (P → Q) ∧ (R → S), P ∨ R |- (Q ∨ S)
      */
-    private fun validateConstructiveDilemma(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 2, "Constructive Dilemma") ?.let { return it }
-        val p1 = checkCD(conjOfImps = refs[0], disjOfAnts = refs[1], conclusion = conclusionTree)
-        val p2 = checkCD(conjOfImps = refs[1], disjOfAnts = refs[0], conclusion = conclusionTree)
-        return if (p1 || p2) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Constructive Dilemma.")
+    private fun validateConstructiveDilemma(
+        conclusionTree: FormulaNode,
+        refNodes: List<FormulaNode>,
+        currentLineNumber: Int
+    ): ValidationResult {
+        if (refNodes.size < 2) {
+            return ValidationResult(false, "Constructive Dilemma requires at least 2 reference lines.")
+        }
+
+        // 1. Deconstruct the reference nodes into their logical components
+        val standaloneImplications = refNodes.filterIsInstance<FormulaNode.BinaryOpNode>()
+            .filter { it.operator == implies }
+
+        var disjunctionOfAntecedents: FormulaNode.BinaryOpNode? = null
+        val extraImplications = mutableListOf<FormulaNode.BinaryOpNode>()
+
+        refNodes.forEach { node ->
+            if (node is FormulaNode.BinaryOpNode && node.operator == or) {
+                if (node.left is FormulaNode.BinaryOpNode && node.left.operator == implies &&
+                    node.right is FormulaNode.BinaryOpNode && node.right.operator == implies) {
+                    extraImplications.add(node.left as FormulaNode.BinaryOpNode)
+                    extraImplications.add(node.right as FormulaNode.BinaryOpNode)
+                } else {
+                    // TODO: This may need to be hoisted out (not part of the else)
+                    disjunctionOfAntecedents = node
+                }
+            } else if (node is FormulaNode.BinaryOpNode && node.operator == and) {
+                if (node.left is FormulaNode.BinaryOpNode && node.left.operator == implies &&
+                    node.right is FormulaNode.BinaryOpNode && node.right.operator == implies) {
+                    extraImplications.add(node.left as FormulaNode.BinaryOpNode)
+                    extraImplications.add(node.right as FormulaNode.BinaryOpNode)
+                }
+            }
+        }
+
+        val allImplications = (standaloneImplications + extraImplications).distinct()
+
+        if (allImplications.size < 2 || disjunctionOfAntecedents == null) {
+            return ValidationResult(false, "The premises do not have the required structure for Constructive Dilemma.")
+        }
+
+        // 2. Iterate through pairs of implications to find a match
+        for (i in allImplications.indices) {
+            for (j in i + 1 until allImplications.size) {
+                val imp1 = allImplications[i] // P -> Q
+                val imp2 = allImplications[j] // R -> S
+
+                val pNode = imp1.left
+                val rNode = imp2.left
+
+                // 3. Check if the disjunction matches the antecedents
+                val disjP = disjunctionOfAntecedents!!.left
+                val disjR = disjunctionOfAntecedents!!.right
+                val antecedentsMatch = (pNode == disjP && rNode == disjR) ||
+                                       (pNode == disjR && rNode == disjP)
+
+                if (antecedentsMatch) {
+                    // 4. If it matches, construct the expected conclusion and check it
+                    val qNode = imp1.right
+                    val sNode = imp2.right
+                    val expectedConclusionNodes = listOf(
+                        fOr(treeToFormula(qNode), treeToFormula(sNode)),
+                        fOr(treeToFormula(sNode), treeToFormula(qNode))
+                    ).map { WffParser.parse(it) }
+
+                    if (conclusionTree in expectedConclusionNodes) {
+                        return ValidationResult(true)
+                    }
+                }
+            }
+        }
+
+        // If no valid derivation was found after checking all pairs
+        return ValidationResult(false, "The conclusion does not follow from the premises by Constructive Dilemma.")
     }
 
-    private fun checkCD(conjOfImps: FormulaNode, disjOfAnts: FormulaNode, conclusion: FormulaNode): Boolean {
-        // 1. Deconstruct the main premise: (Imp1 ∧ Imp2)
-        if (conjOfImps !is FormulaNode.BinaryOpNode || conjOfImps.operator != and) return false
-        val imp1 = conjOfImps.left
-        val imp2 = conjOfImps.right
-
-        // 2. Deconstruct the two implications: (P → Q) and (R → S)
-        if (imp1 !is FormulaNode.BinaryOpNode || imp1.operator != implies) return false
-        if (imp2 !is FormulaNode.BinaryOpNode || imp2.operator != implies) return false
-        val p = imp1.left
-        val q = imp1.right
-        val r = imp2.left
-        val s = imp2.right
-
-        // 3. Deconstruct the second premise: (P ∨ R)
-        if (disjOfAnts !is FormulaNode.BinaryOpNode || disjOfAnts.operator != or) return false
-        val ant1 = disjOfAnts.left  // Antecedent 1
-        val ant2 = disjOfAnts.right // Antecedent 2
-
-        // 4. Deconstruct the conclusion: (Q ∨ S)
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator != or) return false
-        val con1 = conclusion.left  // Consequent 1
-        val con2 = conclusion.right // Consequent 2
-
-        // 5. Check for a match.
-        // The set of antecedents {ant1, ant2} must match the set {p, r}.
-        val antecedentsMatch = (ant1 == p && ant2 == r) || (ant1 == r && ant2 == p)
-        // The set of consequents {con1, con2} must match the set {q, s}.
-        val consequentsMatch = (con1 == q && con2 == s) || (con1 == s && con2 == q)
-
-        return antecedentsMatch && consequentsMatch
-    }
     /**
      * Validate Absorption: (P → Q) |- P → (P ∧ Q)
      */

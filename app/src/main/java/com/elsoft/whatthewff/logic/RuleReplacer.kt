@@ -6,10 +6,8 @@ package com.elsoft.whatthewff.logic
 import com.elsoft.whatthewff.logic.AvailableTiles.or
 import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
-import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
 import com.elsoft.whatthewff.logic.AvailableTiles.not
-import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
-import com.elsoft.whatthewff.logic.ForwardRuleGenerators.treeToFormula
+import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
 //import com.elsoft.whatthewff.logic.AvailableTiles.implies
 //import com.elsoft.whatthewff.logic.AvailableTiles.iff

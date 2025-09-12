@@ -58,13 +58,13 @@ import androidx.compose.ui.unit.sp
 import com.elsoft.whatthewff.logic.AvailableTiles
 import com.elsoft.whatthewff.logic.Formula
 import com.elsoft.whatthewff.logic.FormulaNode
-import com.elsoft.whatthewff.logic.ForwardRuleGenerators
 import com.elsoft.whatthewff.logic.Justification
 import com.elsoft.whatthewff.logic.LogicTile
 import com.elsoft.whatthewff.logic.Problem
 import com.elsoft.whatthewff.logic.Proof
 import com.elsoft.whatthewff.logic.ProofLine
 import com.elsoft.whatthewff.logic.ProofValidator
+import com.elsoft.whatthewff.logic.RuleGenerators
 import com.elsoft.whatthewff.logic.SymbolType
 import com.elsoft.whatthewff.logic.WffParser
 import com.elsoft.whatthewff.ui.features.proof.components.AddLineDialog
@@ -262,8 +262,8 @@ fun ProofScreen(
                             lastLineNode.operator.symbol == "∧"
                         ) {
                             val leftNegatedTree = WffParser.parse(
-                                ForwardRuleGenerators.fNeg(
-                                    ForwardRuleGenerators.treeToFormula(
+                                RuleGenerators.fNeg(
+                                    RuleGenerators.treeToFormula(
                                         lastLineNode.left
                                     )
                                 )
@@ -275,7 +275,7 @@ fun ProofScreen(
 
                         if (isContradiction) {
                             // RAA: Conclude the negation of the assumption
-                            finalFormula = ForwardRuleGenerators.fNeg(assumptionLine.formula)
+                            finalFormula = RuleGenerators.fNeg(assumptionLine.formula)
                             justification =
                                 Justification.ReductioAdAbsurdum(startLine, endLine, endLine)
                         } else {
@@ -428,22 +428,18 @@ fun ProofScreen(
             // --- Dialogs ---
             if (showAddLineDialog) {
                 AddLineDialog(
+                    currentProof = proof,
+                    selectedProofLines = proof.lines.filter { selectedLines.contains(it.lineNumber) },
+                    currentFormula = currentFormula,
+                    currentDepth = currentDepth,
                     onDismiss = { showAddLineDialog = false },
-                    onConfirm = { justification, formulaToAdd ->
-                        val newProofLine = ProofLine(
-                            proof.lines.size + 1,
-                            formulaToAdd,
-                            justification,
-                            currentDepth
-                        )
+                    onConfirm = { newFormula, justification ->
+                        val newProofLine = ProofLine(proof.lines.size + 1, newFormula, justification, currentDepth)
                         proof = Proof(proof.lines + newProofLine)
                         currentFormula = Formula(emptyList())
                         selectedLines = emptySet()
                         showAddLineDialog = false
-                    },
-                    initialLines = selectedLines,
-                    currentFormula = currentFormula,
-                    fullProof = proof
+                    }
                 )
             }
             if (showDeleteDialog) {

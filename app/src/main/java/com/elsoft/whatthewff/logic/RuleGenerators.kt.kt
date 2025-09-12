@@ -5,19 +5,23 @@
 package com.elsoft.whatthewff.logic
 
 import com.elsoft.whatthewff.logic.AvailableTiles.and
-import com.elsoft.whatthewff.logic.AvailableTiles.iff
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.or
+import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
+import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
+import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
+import com.elsoft.whatthewff.logic.RuleGenerators.fOr
+import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
 /**
  * This object contains the specific strategies for building complex goals.
  */
-object ForwardRuleGenerators {
+object RuleGenerators {
 
     /**
      * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
      */
-    fun fAnd (f1: Formula, f2: Formula) = Formula(
+    fun fAnd(f1: Formula, f2: Formula) = Formula(
         listOf(AvailableTiles.leftParen) +
                 f1.tiles +
                 listOf(AvailableTiles.and) +
@@ -28,7 +32,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
      */
-    fun fOr (f1: Formula, f2: Formula) = Formula(
+    fun fOr(f1: Formula, f2: Formula) = Formula(
         listOf(AvailableTiles.leftParen) +
                 f1.tiles +
                 listOf(AvailableTiles.or) +
@@ -39,7 +43,7 @@ object ForwardRuleGenerators {
     /**
      * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
      */
-    fun fImplies (f1: Formula, f2: Formula) = Formula (
+    fun fImplies(f1: Formula, f2: Formula) = Formula(
         listOf(AvailableTiles.leftParen) +
                 f1.tiles +
                 listOf(AvailableTiles.implies) +
@@ -50,8 +54,55 @@ object ForwardRuleGenerators {
     /**
      * A function that takes one formula (P) and creates its negation (¬P).
      */
-    fun fNeg (f1: Formula) = Formula (listOf(AvailableTiles.not) + f1.tiles )
+    fun fNeg(f1: Formula) = Formula(listOf(AvailableTiles.not) + f1.tiles)
 
+
+    /**
+     * Converts a FormulaNode to a Formula.
+     */
+    fun treeToFormula(node: FormulaNode): Formula {
+        val tiles = mutableListOf<LogicTile>()
+
+        fun getPrecedence(op: LogicTile?): Int {
+            return when (op) {
+                AvailableTiles.iff -> 1
+                AvailableTiles.implies -> 2
+                AvailableTiles.or -> 3
+                AvailableTiles.and -> 4
+                else -> 0 // Handles null or any other tile (or null)
+            }
+        }
+
+        fun build(node: FormulaNode, parentPrecedence: Int, isRightChild: Boolean) {
+            when (node) {
+                is FormulaNode.VariableNode -> tiles.add(node.tile)
+                is FormulaNode.UnaryOpNode -> {
+                    tiles.add(node.operator)
+                    build(node.child, 10, false) // High precedence for unary content
+                }
+                is FormulaNode.BinaryOpNode -> {
+                    val currentPrecedence = getPrecedence(node.operator)
+                    // Parenthesize if the current operator has lower precedence than its parent,
+                    // or if it's the same precedence and on the right side of a left-associative op.
+                    val needsParens = currentPrecedence < parentPrecedence ||
+                            (currentPrecedence == parentPrecedence && isRightChild && node.operator != AvailableTiles.implies)
+
+                    if (needsParens) tiles.add(AvailableTiles.leftParen)
+
+                    build(node.left, currentPrecedence, false)
+                    tiles.add(node.operator)
+                    build(node.right, currentPrecedence, true)
+
+                    if (needsParens) tiles.add(AvailableTiles.rightParen)
+                }
+            }
+        }
+
+        build(node, 0, false)
+        return Formula(tiles)
+    }}
+
+object ForwardRuleGenerators {
     val implicationIntroduction = ForwardRule(
         name = "Implication Introduction",
         weight = 10.0,
@@ -325,64 +376,67 @@ object ForwardRuleGenerators {
      * @return A list of triples containing the two implications and the disjunction of their
      *         antecedent formulas {(p → q), (r → s), (p ∨ r)}.
      */
-    fun findAllConstructiveDilemmaPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
+    internal fun findAllConstructiveDilemmaPairs(knownFormulas: List<Formula>): List<Triple<Formula, Formula, Formula>> {
         val triples = mutableListOf<Triple<Formula, Formula, Formula>>()
-
-        // 1. Find all available implications and disjunctions
-        val implications = knownFormulas.filter { f ->
+        // 1. Find all possible sources for the two implications
+        val standaloneImplications = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == implies } ?: false
+        }
+        val conjunctionsOfImplications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { node ->
+                node is FormulaNode.BinaryOpNode && node.operator == and &&
+                        node.left is FormulaNode.BinaryOpNode && (node.left as FormulaNode.BinaryOpNode).operator == implies &&
+                        node.right is FormulaNode.BinaryOpNode && (node.right as FormulaNode.BinaryOpNode).operator == implies
+            } ?: false
+        }
+        val disjunctionsOfImplications = knownFormulas.filter { f ->
+            WffParser.parse(f)?.let { node ->
+                node is FormulaNode.BinaryOpNode && node.operator == or &&
+                        node.left is FormulaNode.BinaryOpNode && (node.left as FormulaNode.BinaryOpNode).operator == implies &&
+                        node.right is FormulaNode.BinaryOpNode && (node.right as FormulaNode.BinaryOpNode).operator == implies
+            } ?: false
+        }
+        val implicationPairs = mutableListOf<Pair<Formula, Formula>>()
+        // Case 1: From two separate implication formulas
+        if (standaloneImplications.size >= 2) {
+            for (i in standaloneImplications.indices) {
+                for (j in i + 1 until standaloneImplications.size) {
+                    implicationPairs.add(Pair(standaloneImplications[i], standaloneImplications[j]))
+                }
+            }
+        }
+        // Case 2: From a single conjunction of implications
+        conjunctionsOfImplications.forEach { conj ->
+            val node = WffParser.parse(conj) as FormulaNode.BinaryOpNode
+            implicationPairs.add(Pair(RuleGenerators.treeToFormula(node.left), RuleGenerators.treeToFormula(node.right)))
+        }
+        // Case 3: From a single disjunction of implications
+        disjunctionsOfImplications.forEach { disj ->
+            val node = WffParser.parse(disj) as FormulaNode.BinaryOpNode
+            implicationPairs.add(Pair(RuleGenerators.treeToFormula(node.left), RuleGenerators.treeToFormula(node.right)))
         }
         val disjunctions = knownFormulas.filter { f ->
             WffParser.parse(f)?.let { it is FormulaNode.BinaryOpNode && it.operator == or } ?: false
         }
-        val conjunctionsOfImplications = knownFormulas.filter { f ->
-            WffParser.parse(f)?.let { node ->
-                   node is FormulaNode.BinaryOpNode && node.operator == and
-                && (WffParser.parse(treeToFormula(node.left))) is FormulaNode.BinaryOpNode
-                && ((WffParser.parse(treeToFormula(node.left)))
-                            as FormulaNode.BinaryOpNode).operator == implies
-                && (WffParser.parse(treeToFormula(node.right))) is FormulaNode.BinaryOpNode
-                && ((WffParser.parse(treeToFormula(node.right)))
-                            as FormulaNode.BinaryOpNode).operator == implies
-            } ?: false
-        }
 
-        // Combine standalone implications with those inside conjunctions
-        val allImplications = implications + conjunctionsOfImplications.flatMap { conj ->
-            val node = WffParser.parse(conj) as FormulaNode.BinaryOpNode
-            listOf(treeToFormula(node.left), treeToFormula(node.right))
-        }
+        // 2. Iterate through all found pairs and look for the second premise
+        for ((imp1, imp2) in implicationPairs.distinct()) {
+            val node1 = WffParser.parse(imp1) as FormulaNode.BinaryOpNode
+            val node2 = WffParser.parse(imp2) as FormulaNode.BinaryOpNode
+            val pNode = node1.left
+            val rNode = node2.left
+            val pFormula = RuleGenerators.treeToFormula(pNode)
+            val rFormula = RuleGenerators.treeToFormula(rNode)
 
-        if (allImplications.size < 2) return triples
+            // Use the smart helper to ensure parentheses are handled correctly
+            val requiredDisjNode1 = WffParser.parse(RuleGenerators.fOr(pFormula, rFormula))
+            val requiredDisjNode2 = WffParser.parse(RuleGenerators.fOr(rFormula, pFormula))
 
-        // 2. Iterate through all combinations
-        for (i in allImplications.indices) {
-            for (j in i + 1 until allImplications.size) {
-                val imp1 = allImplications[i]
-                val imp2 = allImplications[j]
-
-                val node1 = WffParser.parse(imp1) as FormulaNode.BinaryOpNode
-                val node2 = WffParser.parse(imp2) as FormulaNode.BinaryOpNode
-                val pNode = node1.left
-                val rNode = node2.left
-
-                val pFormula = treeToFormula(pNode)
-                val rFormula = treeToFormula(rNode)
-
-                // 3. Look for a matching disjunction of their antecedents
-                val requiredDisj1 = fOr(pFormula, rFormula)
-                val requiredDisj2 = fOr(rFormula, pFormula)
-
-                // Compare the parsed syntax trees, not the raw Formulas
-                val reqNode1 = WffParser.parse(requiredDisj1)
-                val reqNode2 = WffParser.parse(requiredDisj2)
-
-                disjunctions.find { disj ->
-                    val disjNode = WffParser.parse(disj)
-                    disjNode == reqNode1 || disjNode == reqNode2
-                }?.let { disj ->
-                    triples.add(Triple(imp1, imp2, disj))
-                }
+            disjunctions.find { disj ->
+                val disjNode = WffParser.parse(disj)
+                disjNode == requiredDisjNode1 || disjNode == requiredDisjNode2
+            }?.let { matchingDisj ->
+                triples.add(Triple(imp1, imp2, matchingDisj))
             }
         }
         return triples
@@ -409,50 +463,5 @@ object ForwardRuleGenerators {
     }
 
     ///////////////// Formula building helpers ///////////////////////////////
-
-    /**
-     * Converts a FormulaNode to a Formula.
-     */
-    fun treeToFormula(node: FormulaNode): Formula {
-        val tiles = mutableListOf<LogicTile>()
-
-        fun getPrecedence(op: LogicTile?): Int {
-            return when (op) {
-                iff -> 1
-                implies -> 2
-                or -> 3
-                and -> 4
-                else -> 0 // Handles null or any other tile (or null)
-            }
-        }
-
-        fun build(node: FormulaNode, parentPrecedence: Int, isRightChild: Boolean) {
-            when (node) {
-                is FormulaNode.VariableNode -> tiles.add(node.tile)
-                is FormulaNode.UnaryOpNode -> {
-                    tiles.add(node.operator)
-                    build(node.child, 10, false) // High precedence for unary content
-                }
-                is FormulaNode.BinaryOpNode -> {
-                    val currentPrecedence = getPrecedence(node.operator)
-                    // Parenthesize if the current operator has lower precedence than its parent,
-                    // or if it's the same precedence and on the right side of a left-associative op.
-                    val needsParens = currentPrecedence < parentPrecedence ||
-                            (currentPrecedence == parentPrecedence && isRightChild && node.operator != implies)
-
-                    if (needsParens) tiles.add(AvailableTiles.leftParen)
-
-                    build(node.left, currentPrecedence, false)
-                    tiles.add(node.operator)
-                    build(node.right, currentPrecedence, true)
-
-                    if (needsParens) tiles.add(AvailableTiles.rightParen)
-                }
-            }
-        }
-
-        build(node, 0, false)
-        return Formula(tiles)
-    }
 
 }

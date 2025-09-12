@@ -19,7 +19,7 @@ class ForwardRuleGeneratorsTest {
     fun `conjunction canApply is correct`() {
         assertTrue("Conjunction should apply with 2 formulas",
                    ForwardRuleGenerators.conjunction.canApply(listOf(f("p"),
-                                                                     f("q"))))
+                                                                   f("q"))))
         assertFalse("Conjunction should not apply with 1 formula",
                     ForwardRuleGenerators.conjunction.canApply(listOf(f("p"))))
     }
@@ -47,13 +47,13 @@ class ForwardRuleGeneratorsTest {
     fun `modusPonens canApply is correct`() {
         assertTrue("MP should apply when premises exist",
                    ForwardRuleGenerators.modusPonens.canApply(listOf(f("(p→q)"),
-                                                                     f("p"))))
+                                                                   f("p"))))
         assertFalse("MP should not apply without antecedent",
                     ForwardRuleGenerators.modusPonens.canApply(listOf(f("(p→q)"),
-                                                                      f("r"))))
+                                                                    f("r"))))
         assertFalse("MP should not apply without implication",
                     ForwardRuleGenerators.modusPonens.canApply(listOf(f("q"),
-                                                                      f("p"))))
+                                                                    f("p"))))
     }
 
     @Test
@@ -77,10 +77,10 @@ class ForwardRuleGeneratorsTest {
     fun `modusTollens canApply is correct`() {
         assertTrue("MT should apply when premises exist",
                    ForwardRuleGenerators.modusTollens.canApply(listOf(f("(p→q)"),
-                                                                      f("¬q"))))
+                                                                    f("¬q"))))
         assertFalse("MT should not apply without negated consequent",
                     ForwardRuleGenerators.modusTollens.canApply(listOf(f("(p→q)"),
-                                                                       f("q"))))
+                                                                     f("q"))))
     }
 
     @Test
@@ -104,10 +104,10 @@ class ForwardRuleGeneratorsTest {
     fun `hypotheticalSyllogism canApply is correct`() {
         assertTrue("HS should apply when premises exist",
                    ForwardRuleGenerators.hypotheticalSyllogism.canApply(listOf(f("(p→q)"),
-                                                                               f("(q→r)"))))
+                                                                             f("(q→r)"))))
         assertFalse("HS should not apply without a valid chain",
                     ForwardRuleGenerators.hypotheticalSyllogism.canApply(listOf(f("(p→q)"),
-                                                                                f("(r→s)"))))
+                                                                              f("(r→s)"))))
     }
 
     @Test
@@ -132,13 +132,13 @@ class ForwardRuleGeneratorsTest {
     fun `disjunctiveSyllogism canApply is correct`() {
         assertTrue("DS should apply with (p∨q) and ¬p",
                    ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"),
-                                                                              f("¬p"))))
+                                                                            f("¬p"))))
         assertTrue("DS should apply with (p∨q) and ¬q",
                    ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"),
-                                                                              f("¬q"))))
+                                                                            f("¬q"))))
         assertFalse("DS should not apply without negation",
                     ForwardRuleGenerators.disjunctiveSyllogism.canApply(listOf(f("(p∨q)"),
-                                                                               f("p"))))
+                                                                             f("p"))))
     }
 
     @Test
@@ -191,7 +191,7 @@ class ForwardRuleGeneratorsTest {
     fun `addition canApply is correct`() {
         assertTrue("Addition should apply with 2 formulas",
                    ForwardRuleGenerators.addition.canApply(listOf(f("p"),
-                                                                  f("q"))))
+                                                                f("q"))))
         assertFalse("Addition should not apply with 1 formula",
                     ForwardRuleGenerators.addition.canApply(listOf(f("p"))))
     }
