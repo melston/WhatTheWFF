@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -76,18 +77,36 @@ fun ProblemItem(
     problem: CustomProblem,
     onClicked: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClicked)
-            .padding(vertical = 16.dp)
+            .padding(vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically // Center items vertically in the row
     ) {
-        Text(problem.id, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Goal: ${problem.conclusion.stringValue}",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Light
-        )
+        Box(
+            modifier = Modifier.size(24.dp), // Standard icon size
+            contentAlignment = Alignment.Center
+        ) {
+            if (problem.solvedProof != null) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Solved",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        Spacer(Modifier.width(16.dp)) // Space between icon and text
+
+        Column {
+            Text(problem.id, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Goal: ${problem.conclusion.stringValue}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Light
+            )
+        }
     }
 }

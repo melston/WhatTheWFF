@@ -22,8 +22,7 @@ class ProofViewModel(
     fun saveProof(proof: Proof) {
         viewModelScope.launch {
             // Find the specific problem entity in the database
-            val problemsInSet = dao.getProblemsForSet(problemSetTitle)
-            val problemToUpdate = problemsInSet.find { it.id == problemId }
+            val problemToUpdate = dao.getProblemEntity(problemSetTitle, problemId)
 
             if (problemToUpdate != null) {
                 // Create an updated version of the entity with the new proof

@@ -22,6 +22,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.internal.Streams
 import com.google.gson.stream.JsonToken
+import kotlinx.coroutines.flow.Flow
 import java.io.IOException
 
 // --- Database Entities (Tables) ---
@@ -121,7 +122,10 @@ interface ProblemDao {
     suspend fun deleteProblemSet(setTitle: String)
 
     @Query("SELECT * FROM custom_problems WHERE problemSetTitle = :setTitle ORDER BY id ASC")
-    suspend fun getProblemsForSet(setTitle: String): List<CustomProblemEntity>
+    fun getProblemsForSet(setTitle: String): Flow<List<CustomProblemEntity>>
+
+    @Query("SELECT * FROM custom_problems WHERE problemSetTitle = :setTitle AND id = :problemId LIMIT 1")
+    suspend fun getProblemEntity(setTitle: String, problemId: String): CustomProblemEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProblems(problems: List<CustomProblemEntity>)
