@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.elsoft.whatthewff.logic.Problem
 import com.elsoft.whatthewff.ui.features.customproblems.ProblemListScreen
 import com.elsoft.whatthewff.ui.features.customproblems.ProblemSetBrowserScreen
 import com.elsoft.whatthewff.ui.features.game.GameModeScreen
@@ -52,7 +53,10 @@ class MainActivity : ComponentActivity() {
                         is Screen.GameModeSelect -> GameModeScreen(
                             onProblemGenerated = { problem ->
                                 previousScreen = Screen.GameModeSelect
-                                currentScreen = Screen.Proof(problem, "Generated Problem")
+                                currentScreen = Screen.Proof(
+                                    problem, "Generated Problem",
+                                    initialProof = null
+                                )
                             },
                             onBackClicked = { currentScreen = Screen.Main }
                         )
@@ -68,12 +72,30 @@ class MainActivity : ComponentActivity() {
                             onBackPressed = { currentScreen = Screen.ProblemSetBrowser },
                             onProblemSelected = { problem, problemSetTitle ->
                                 previousScreen = Screen.ProblemList(screen.setTitle)
-                                currentScreen = Screen.Proof(problem, problemSetTitle)
+                                currentScreen = Screen.Proof(
+                                    problem, problemSetTitle,
+                                    initialProof = null
+                                )
+                            },
+                            // Callback for long click
+                            onProblemLongClicked = { customProblem, setTitle ->
+                                if (customProblem.solvedProof != null) {
+                                    val problem = Problem(
+                                        id = customProblem.id,
+                                        name = "View Solution: ${setTitle}: ${customProblem.id}",
+                                        premises = customProblem.premises,
+                                        conclusion = customProblem.conclusion,
+                                        difficulty = 0
+                                    )
+                                    previousScreen = Screen.ProblemList(screen.setTitle)
+                                    currentScreen = Screen.Proof(problem, setTitle, customProblem.solvedProof)
+                                }
                             }
                         )
                         is Screen.Proof -> ProofScreen(
                             problem = screen.problem,
                             problemSetTitle = screen.setTitle,
+                            initialProof = screen.initialProof,
                             onBackClicked = { currentScreen = previousScreen }
                         )
                     }

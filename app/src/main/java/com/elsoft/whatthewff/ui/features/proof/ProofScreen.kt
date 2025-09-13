@@ -183,13 +183,19 @@ fun DraggableItem(
 fun ProofScreen(
     problem: Problem,
     problemSetTitle: String,
+    initialProof: Proof?,
     onBackClicked: () -> Unit
 ) {
     // --- State Management ---
+    val isViewOnly = initialProof != null
     var proof by remember {
-        mutableStateOf(Proof(lines = problem.premises.mapIndexed { i, p ->
-            ProofLine(i + 1, p, Justification.Premise) }
-        )) }
+        mutableStateOf(
+            initialProof ?:
+                Proof(lines = problem.premises.mapIndexed {
+                          i, p -> ProofLine(i + 1, p, Justification.Premise)
+                })
+        )
+    }
     var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isFabMenuExpanded by remember { mutableStateOf(false) }
@@ -204,16 +210,6 @@ fun ProofScreen(
     var lineToDelete by remember { mutableStateOf<Int?>(null) }
     val showDeleteDialog = lineToDelete != null
 
-    // --- KEY CHANGE: Dynamically create the symbol palette based on the problem ---
-    val paletteVars = remember(problem) {
-        val variables = (problem.premises.flatMap { it.tiles } + problem.conclusion.tiles)
-            .filter { it.type == SymbolType.VARIABLE }
-            .distinctBy { it.symbol }
-            .sortedBy { it.symbol }
-
-        variables
-    }
-
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
 
@@ -225,6 +221,16 @@ fun ProofScreen(
         )
     )
 
+    // Dynamically create the symbol palette based on the problem
+    val paletteTiles = remember(problem) {
+        val variables = (problem.premises.flatMap { it.tiles } + problem.conclusion.tiles)
+            .filter { it.type == SymbolType.VARIABLE }
+            .distinctBy { it.symbol }
+            .sortedBy { it.symbol }
+
+        variables
+    }
+
     val fileSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/html"),
         onResult = { uri: Uri? ->
@@ -235,7 +241,9 @@ fun ProofScreen(
                         outputStream.write(htmlContent.toByteArray())
                     }
                 } catch (e: Exception) {
-                    // Optionally show a toast or message on failure
+                    Toast.makeText(context,
+                                   "Error Saving File: ${e.message}",
+                                   Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -298,141 +306,143 @@ fun ProofScreen(
                 )
             },
             floatingActionButton = {
-                FabMenu(
-                    isExpanded = isFabMenuExpanded,
-                    onToggle = { isFabMenuExpanded = !isFabMenuExpanded },
-                    onAddPremise = {
-                        val newProofLine = ProofLine(
-                            proof.lines.size + 1,
-                            currentFormula,
-                            Justification.Premise,
-                            currentDepth
-                        )
-                        proof = Proof(proof.lines + newProofLine)
-                        currentFormula = Formula(emptyList())
-                        isFabMenuExpanded = false
-                    },
-                    onStartSubproof = {
-                        val assumptionFormula = if (selectedLines.size == 1) {
-                            proof.lines.getOrNull(selectedLines.first() - 1)?.formula
-                                ?: currentFormula
-                        } else {
-                            currentFormula
-                        }
+                if (!isViewOnly) {
+                    FabMenu(
+                        isExpanded = isFabMenuExpanded,
+                        onToggle = { isFabMenuExpanded = !isFabMenuExpanded },
+                        onAddPremise = {
+                            val newProofLine = ProofLine(
+                                proof.lines.size + 1,
+                                currentFormula,
+                                Justification.Premise,
+                                currentDepth
+                            )
+                            proof = Proof(proof.lines + newProofLine)
+                            currentFormula = Formula(emptyList())
+                            isFabMenuExpanded = false
+                        },
+                        onStartSubproof = {
+                            val assumptionFormula = if (selectedLines.size == 1) {
+                                proof.lines.getOrNull(selectedLines.first() - 1)?.formula
+                                    ?: currentFormula
+                            } else {
+                                currentFormula
+                            }
 
-                        val newProofLine = ProofLine(
-                            proof.lines.size + 1,
-                            assumptionFormula,
-                            Justification.Assumption,
-                            currentDepth + 1
-                        )
-                        proof = Proof(proof.lines + newProofLine)
-                        subproofStartLines = subproofStartLines + (proof.lines.size)
-                        currentDepth++
-                        currentFormula = Formula(emptyList()) // Always clear construction area
-                        selectedLines = emptySet() // Clear selection after using it
-                        isFabMenuExpanded = false
-                    },
-                    onEndSubproof = {
-                        val startLine = subproofStartLines.last()
-                        val endLine = proof.lines.size
-                        val assumptionLine = proof.lines[startLine - 1]
-                        val conclusionLine = proof.lines.last()
+                            val newProofLine = ProofLine(
+                                proof.lines.size + 1,
+                                assumptionFormula,
+                                Justification.Assumption,
+                                currentDepth + 1
+                            )
+                            proof = Proof(proof.lines + newProofLine)
+                            subproofStartLines = subproofStartLines + (proof.lines.size)
+                            currentDepth++
+                            currentFormula = Formula(emptyList()) // Always clear construction area
+                            selectedLines = emptySet() // Clear selection after using it
+                            isFabMenuExpanded = false
+                        },
+                        onEndSubproof = {
+                            val startLine = subproofStartLines.last()
+                            val endLine = proof.lines.size
+                            val assumptionLine = proof.lines[startLine - 1]
+                            val conclusionLine = proof.lines.last()
 
-                        val finalFormula: Formula
-                        val justification: Justification
+                            val finalFormula: Formula
+                            val justification: Justification
 
-                        // Check if the last line of the sub-proof is a contradiction
-                        val lastLineNode = WffParser.parse(conclusionLine.formula)
-                        val isContradiction = if (lastLineNode is FormulaNode.BinaryOpNode &&
-                            lastLineNode.operator.symbol == "∧"
-                        ) {
-                            val leftNegatedTree = WffParser.parse(
-                                RuleGenerators.fNeg(
-                                    RuleGenerators.treeToFormula(
-                                        lastLineNode.left
+                            // Check if the last line of the sub-proof is a contradiction
+                            val lastLineNode = WffParser.parse(conclusionLine.formula)
+                            val isContradiction = if (lastLineNode is FormulaNode.BinaryOpNode &&
+                                lastLineNode.operator.symbol == "∧"
+                            ) {
+                                val leftNegatedTree = WffParser.parse(
+                                    RuleGenerators.fNeg(
+                                        RuleGenerators.treeToFormula(
+                                            lastLineNode.left
+                                        )
                                     )
                                 )
+                                leftNegatedTree == lastLineNode.right
+                            } else {
+                                false
+                            }
+
+                            if (isContradiction) {
+                                // RAA: Conclude the negation of the assumption
+                                finalFormula = RuleGenerators.fNeg(assumptionLine.formula)
+                                justification =
+                                    Justification.ReductioAdAbsurdum(startLine, endLine, endLine)
+                            } else {
+                                // II: Conclude the implication, ensuring it's correctly parenthesized.
+                                val antecedent = assumptionLine.formula
+                                val consequent = conclusionLine.formula
+
+                                val antecedentTiles = WffParser.parse(antecedent)?.let {
+                                    if (it is FormulaNode.BinaryOpNode) {
+                                        listOf(AvailableTiles.leftParen) +
+                                                antecedent.tiles +
+                                                listOf(AvailableTiles.rightParen)
+                                    } else {
+                                        antecedent.tiles
+                                    }
+                                } ?: antecedent.tiles
+
+                                val consequentTiles = WffParser.parse(consequent)?.let {
+                                    if (it is FormulaNode.BinaryOpNode) {
+                                        listOf(AvailableTiles.leftParen) +
+                                                consequent.tiles +
+                                                listOf(AvailableTiles.rightParen)
+                                    } else {
+                                        consequent.tiles
+                                    }
+                                } ?: consequent.tiles
+
+                                finalFormula = Formula(
+                                    antecedentTiles +
+                                            listOf(AvailableTiles.implies) +
+                                            consequentTiles
+                                )
+                                justification =
+                                    Justification.ImplicationIntroduction(startLine, endLine)
+                            }
+
+                            val newProofLine = ProofLine(
+                                proof.lines.size + 1,
+                                finalFormula,
+                                justification,
+                                currentDepth - 1
                             )
-                            leftNegatedTree == lastLineNode.right
-                        } else {
-                            false
-                        }
-
-                        if (isContradiction) {
-                            // RAA: Conclude the negation of the assumption
-                            finalFormula = RuleGenerators.fNeg(assumptionLine.formula)
-                            justification =
-                                Justification.ReductioAdAbsurdum(startLine, endLine, endLine)
-                        } else {
-                            // II: Conclude the implication, ensuring it's correctly parenthesized.
-                            val antecedent = assumptionLine.formula
-                            val consequent = conclusionLine.formula
-
-                            val antecedentTiles = WffParser.parse(antecedent)?.let {
-                                if (it is FormulaNode.BinaryOpNode) {
-                                    listOf(AvailableTiles.leftParen) +
-                                            antecedent.tiles +
-                                            listOf(AvailableTiles.rightParen)
-                                } else {
-                                    antecedent.tiles
-                                }
-                            } ?: antecedent.tiles
-
-                            val consequentTiles = WffParser.parse(consequent)?.let {
-                                if (it is FormulaNode.BinaryOpNode) {
-                                    listOf(AvailableTiles.leftParen) +
-                                            consequent.tiles +
-                                            listOf(AvailableTiles.rightParen)
-                                } else {
-                                    consequent.tiles
-                                }
-                            } ?: consequent.tiles
-
-                            finalFormula = Formula(
-                                antecedentTiles +
-                                        listOf(AvailableTiles.implies) +
-                                        consequentTiles
+                            proof = Proof(proof.lines + newProofLine)
+                            subproofStartLines = subproofStartLines.dropLast(1)
+                            currentDepth--
+                            isFabMenuExpanded = false
+                        },
+                        onAddDerivedLine = {
+                            showAddLineDialog = true
+                            isFabMenuExpanded = false
+                        },
+                        onReiterate = {
+                            val lineToReiterate = proof.lines[selectedLines.first() - 1]
+                            val newProofLine = ProofLine(
+                                proof.lines.size + 1,
+                                lineToReiterate.formula,
+                                Justification.Reiteration(lineToReiterate.lineNumber),
+                                currentDepth
                             )
-                            justification =
-                                Justification.ImplicationIntroduction(startLine, endLine)
-                        }
-
-                        val newProofLine = ProofLine(
-                            proof.lines.size + 1,
-                            finalFormula,
-                            justification,
-                            currentDepth - 1
-                        )
-                        proof = Proof(proof.lines + newProofLine)
-                        subproofStartLines = subproofStartLines.dropLast(1)
-                        currentDepth--
-                        isFabMenuExpanded = false
-                    },
-                    onAddDerivedLine = {
-                        showAddLineDialog = true
-                        isFabMenuExpanded = false
-                    },
-                    onReiterate = {
-                        val lineToReiterate = proof.lines[selectedLines.first() - 1]
-                        val newProofLine = ProofLine(
-                            proof.lines.size + 1,
-                            lineToReiterate.formula,
-                            Justification.Reiteration(lineToReiterate.lineNumber),
-                            currentDepth
-                        )
-                        proof = Proof(proof.lines + newProofLine)
-                        selectedLines = emptySet()
-                        isFabMenuExpanded = false
-                    },
-                    isAddPremiseEnabled = currentDepth == 0 && currentFormula.tiles.isNotEmpty(),
-                    isStartSubproofEnabled = currentFormula.tiles.isNotEmpty() || selectedLines.size == 1,
-                    isEndSubproofEnabled = currentDepth > 0,
-                    isReiterateEnabled = selectedLines.size == 1 && currentDepth > 0 && (proof.lines.getOrNull(
-                        selectedLines.first() - 1
-                    )?.depth ?: 0) < currentDepth,
-                    isAddDerivedLineEnabled = currentFormula.tiles.isNotEmpty() || selectedLines.isNotEmpty()
-                )
+                            proof = Proof(proof.lines + newProofLine)
+                            selectedLines = emptySet()
+                            isFabMenuExpanded = false
+                        },
+                        isAddPremiseEnabled = currentDepth == 0 && currentFormula.tiles.isNotEmpty(),
+                        isStartSubproofEnabled = currentFormula.tiles.isNotEmpty() || selectedLines.size == 1,
+                        isEndSubproofEnabled = currentDepth > 0,
+                        isReiterateEnabled = selectedLines.size == 1 && currentDepth > 0 && (proof.lines.getOrNull(
+                            selectedLines.first() - 1
+                        )?.depth ?: 0) < currentDepth,
+                        isAddDerivedLineEnabled = currentFormula.tiles.isNotEmpty() || selectedLines.isNotEmpty()
+                    )
+                }
             }
         ) { padding ->
             Column(
@@ -483,37 +493,39 @@ fun ProofScreen(
                     )
                 }
 
-                ConstructionArea(
-                    formula = currentFormula,
-                    onFormulaChange = { newFormula ->
-                        currentFormula = newFormula
-                    }
-                )
-
-                SymbolPalette(variables = paletteVars)
-
-                Button(
-                    onClick = {
-                        val result = ProofValidator.validate(proof)
-                        // We do this next to allow for the case where the goal is expressed with
-                        // surrounding parens but the user doesn't include them.  If the two formulas
-                        // are otherwise equal, we consider the proof valid.
-                        val finalLineMatchesGoal = proof.lines.lastOrNull()?.let { lastLine ->
-                            WffParser.parse(lastLine.formula) == WffParser.parse(problem.conclusion)
-                        } ?: false // If there's no last line, it can't match.
-
-                        feedbackMessage = when {
-                            !result.isValid -> "Error on line ${result.errorLine}: ${result.errorMessage}"
-                            !finalLineMatchesGoal -> "Proof is valid, but does not reach the goal."
-                            else -> {
-                                proofViewModel.saveProof(proof)
-                                Toast.makeText(context, "Solution Saved!", Toast.LENGTH_SHORT).show()
-                                "Congratulations! Proof is valid and complete."
-                            }
+                if (!isViewOnly) {
+                    ConstructionArea(
+                        formula = currentFormula,
+                        onFormulaChange = { newFormula ->
+                            currentFormula = newFormula
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) { Text("Validate Proof") }
+                    )
+
+                    SymbolPalette(variables = paletteTiles)
+
+                    Button(
+                        onClick = {
+                            val result = ProofValidator.validate(proof)
+                            // We do this next to allow for the case where the goal is expressed with
+                            // surrounding parens but the user doesn't include them.  If the two formulas
+                            // are otherwise equal, we consider the proof valid.
+                            val finalLineMatchesGoal = proof.lines.lastOrNull()?.let { lastLine ->
+                                WffParser.parse(lastLine.formula) == WffParser.parse(problem.conclusion)
+                            } ?: false // If there's no last line, it can't match.
+
+                            feedbackMessage = when {
+                                !result.isValid -> "Error on line ${result.errorLine}: ${result.errorMessage}"
+                                !finalLineMatchesGoal -> "Proof is valid, but does not reach the goal."
+                                else -> {
+                                    proofViewModel.saveProof(proof)
+                                    Toast.makeText(context, "Solution Saved!", Toast.LENGTH_SHORT).show()
+                                    "Congratulations! Proof is valid and complete."
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) { Text("Validate Proof") }
+                }
             }
 
             // --- Dialogs ---
