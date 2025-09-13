@@ -4,6 +4,7 @@
 
 package com.elsoft.whatthewff.ui.features.proof
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -11,6 +12,7 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -68,6 +70,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.elsoft.whatthewff.data.ProofViewModel
 import com.elsoft.whatthewff.logic.AvailableTiles
 import com.elsoft.whatthewff.logic.Formula
 import com.elsoft.whatthewff.logic.FormulaNode
@@ -178,6 +182,7 @@ fun DraggableItem(
 @Composable
 fun ProofScreen(
     problem: Problem,
+    problemSetTitle: String,
     onBackClicked: () -> Unit
 ) {
     // --- State Management ---
@@ -211,6 +216,14 @@ fun ProofScreen(
 
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+
+    val proofViewModel: ProofViewModel = viewModel(
+        factory = ProofViewModel.Factory(
+            context.applicationContext as Application,
+            problemSetTitle,
+            problem.id
+        )
+    )
 
     val fileSaverLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/html"),
@@ -488,10 +501,15 @@ fun ProofScreen(
                         val finalLineMatchesGoal = proof.lines.lastOrNull()?.let { lastLine ->
                             WffParser.parse(lastLine.formula) == WffParser.parse(problem.conclusion)
                         } ?: false // If there's no last line, it can't match.
+
                         feedbackMessage = when {
                             !result.isValid -> "Error on line ${result.errorLine}: ${result.errorMessage}"
                             !finalLineMatchesGoal -> "Proof is valid, but does not reach the goal."
-                            else -> "Congratulations! Proof is valid and complete."
+                            else -> {
+                                proofViewModel.saveProof(proof)
+                                Toast.makeText(context, "Solution Saved!", Toast.LENGTH_SHORT).show()
+                                "Congratulations! Proof is valid and complete."
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)

@@ -5,24 +5,24 @@
 package com.elsoft.whatthewff.data
 
 import android.content.Context
-import androidx.room.Dao
-import androidx.room.Database
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.PrimaryKey
-import androidx.room.Query
-import androidx.room.Room
-import androidx.room.RoomDatabase
-import androidx.room.TypeConverter
-import androidx.room.TypeConverters
-import androidx.room.Update
+import androidx.room.*
 import com.elsoft.whatthewff.logic.Formula
+import com.elsoft.whatthewff.logic.Justification
+import com.elsoft.whatthewff.logic.LogicTile
 import com.elsoft.whatthewff.logic.Proof
-import com.elsoft.whatthewff.logic.WffParser
+import com.elsoft.whatthewff.logic.SymbolType
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import com.google.gson.TypeAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonWriter
+import com.google.gson.JsonParseException
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.internal.Streams
+import com.google.gson.stream.JsonToken
+import java.io.IOException
 
 // --- Database Entities (Tables) ---
 
@@ -56,42 +56,54 @@ data class CustomProblemEntity(
  * It converts them to and from a JSON string for storage in the database.
  */
 class Converters {
-    private val gson = Gson()
+    private val gson: Gson by lazy {
+        // Create a special Type Adapter Factory for our Justification sealed class
+        val justificationAdapterFactory = RuntimeTypeAdapterFactory.of(
+            Justification::class.java, "type")
+            .registerSubtype(Justification.Premise::class.java, "premise")
+            .registerSubtype(Justification.Assumption::class.java, "assumption")
+            .registerSubtype(Justification.Inference::class.java, "inference")
+            .registerSubtype(Justification.Replacement::class.java, "replacement")
+            .registerSubtype(Justification.ImplicationIntroduction::class.java, "implication_introduction")
+            .registerSubtype(Justification.ReductioAdAbsurdum::class.java, "reductio_ad_absurdum")
+            .registerSubtype(Justification.Reiteration::class.java, "reiteration")
 
-    @TypeConverter
-    fun fromFormulaList(value: List<Formula>?): String? {
-        return gson.toJson(value?.map { it.stringValue })
-    }
-
-    @TypeConverter
-    fun toFormulaList(value: String?): List<Formula>? {
-        val listType = object : TypeToken<List<String>>() {}.type
-        val stringList: List<String>? = gson.fromJson(value, listType)
-        return stringList?.mapNotNull { WffParser.f(it) }
+        // Build a new Gson instance with our custom adapter
+        GsonBuilder()
+            .registerTypeAdapter(LogicTile::class.java, LogicTileAdapter()) // <-- Register new adapter
+            .registerTypeAdapterFactory(justificationAdapterFactory)
+            .create()
     }
 
     @TypeConverter
     fun fromFormula(value: Formula?): String? {
-        return value?.stringValue
+        return gson.toJson(value)
     }
 
     @TypeConverter
     fun toFormula(value: String?): Formula? {
-        return value?.let { WffParser.f(it) }
+        return gson.fromJson(value, Formula::class.java)
+    }
+
+    @TypeConverter
+    fun fromFormulaList(value: List<Formula>?): String? {
+        return gson.toJson(value)
+    }
+
+    @TypeConverter
+    fun toFormulaList(value: String?): List<Formula>? {
+        val listType = object : TypeToken<List<Formula>>() {}.type
+        return gson.fromJson(value, listType)
     }
 
     @TypeConverter
     fun fromProof(value: Proof?): String? {
-        // TODO: Implement Converters.fromProof : Proof? -> String?
-        // A more robust implementation would serialize the whole Proof object
-        return null // Placeholder for now
+        return value?.let { gson.toJson(it) }
     }
 
     @TypeConverter
     fun toProof(value: String?): Proof? {
-        // TODO: Implement Converters.toProof : String? -> Proof?
-        // A more robust implementation would deserialize the Proof object
-        return null // Placeholder for now
+        return value?.let { gson.fromJson(it, Proof::class.java) }
     }
 }
 
@@ -99,23 +111,23 @@ class Converters {
 
 @Dao
 interface ProblemDao {
+    @Query("SELECT * FROM problem_sets ORDER BY title ASC")
+    suspend fun getAllProblemSets(): List<ProblemSetEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProblemSet(set: ProblemSetEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertProblems(problems: List<CustomProblemEntity>)
-
-    @Query("SELECT * FROM problem_sets ORDER BY title ASC")
-    suspend fun getAllProblemSets(): List<ProblemSetEntity>
+    @Query("DELETE FROM problem_sets WHERE title = :setTitle")
+    suspend fun deleteProblemSet(setTitle: String)
 
     @Query("SELECT * FROM custom_problems WHERE problemSetTitle = :setTitle ORDER BY id ASC")
     suspend fun getProblemsForSet(setTitle: String): List<CustomProblemEntity>
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProblems(problems: List<CustomProblemEntity>)
+
     @Update
     suspend fun updateProblem(problem: CustomProblemEntity)
-
-    @Query("DELETE FROM problem_sets WHERE title = :setTitle")
-    suspend fun deleteProblemSet(setTitle: String)
 }
 
 
@@ -141,5 +153,109 @@ abstract class ProblemDatabase : RoomDatabase() {
                 instance
             }
         }
+    }
+}
+
+class LogicTileAdapter : TypeAdapter<LogicTile>() {
+    override fun write(out: JsonWriter, value: LogicTile?) {
+        if (value == null) {
+            out.nullValue()
+            return
+        }
+        out.beginObject()
+        out.name("symbol").value(value.symbol)
+        out.name("type").value(value.type.name)
+        out.endObject()
+    }
+
+    override fun read(reader: JsonReader): LogicTile? {
+        if (reader.peek() == JsonToken.NULL) {
+            reader.nextNull()
+            return null
+        }
+        reader.beginObject()
+        var symbol: String? = null
+        var type: SymbolType? = null
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "symbol" -> symbol = reader.nextString()
+                "type" -> type = SymbolType.valueOf(reader.nextString())
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+        return if (symbol != null && type != null) LogicTile(symbol, type) else null
+    }
+}
+
+
+// --- GSON Utility: RuntimeTypeAdapterFactory ---
+// This is a standard utility class for helping Gson handle polymorphic types like sealed classes.
+// No need to modify this, just include it in the file.
+class RuntimeTypeAdapterFactory<T> private constructor(
+    private val baseType: Class<*>,
+    private val typeFieldName: String
+) : com.google.gson.TypeAdapterFactory {
+    private val labelToSubtype = LinkedHashMap<String, Class<*>>()
+    private val subtypeToLabel = LinkedHashMap<Class<*>, String>()
+
+    companion object {
+        fun <T> of(baseType: Class<T>, typeFieldName: String): RuntimeTypeAdapterFactory<T> {
+            return RuntimeTypeAdapterFactory(baseType, typeFieldName)
+        }
+    }
+
+    fun registerSubtype(subtype: Class<out T>, label: String): RuntimeTypeAdapterFactory<T> {
+        if (subtypeToLabel.containsKey(subtype) || labelToSubtype.containsKey(label)) {
+            throw IllegalArgumentException("types and labels must be unique")
+        }
+        labelToSubtype[label] = subtype
+        subtypeToLabel[subtype] = label
+        return this
+    }
+
+    override fun <R : Any> create(gson: Gson, type: TypeToken<R>): TypeAdapter<R>? {
+        if (type.rawType != baseType) {
+            return null
+        }
+
+        val labelToDelegate = LinkedHashMap<String, TypeAdapter<*>>()
+        val subtypeToDelegate = LinkedHashMap<Class<*>, TypeAdapter<*>>()
+        for ((label, subtype) in labelToSubtype) {
+            val delegate = gson.getDelegateAdapter(this, TypeToken.get(subtype))
+            labelToDelegate[label] = delegate
+            subtypeToDelegate[subtype] = delegate
+        }
+
+        return object : TypeAdapter<R>() {
+            @Throws(IOException::class)
+            override fun read(inReader: JsonReader): R? {
+                val jsonElement = Streams.parse(inReader)
+                val labelJsonElement = jsonElement.asJsonObject.remove(typeFieldName)
+                    ?: throw JsonParseException("cannot deserialize ${baseType} because it does not define a field named ${typeFieldName}")
+                val label = labelJsonElement.asString
+                val delegate = labelToDelegate[label] as TypeAdapter<R>?
+                    ?: throw JsonParseException("cannot deserialize ${baseType} subtype named ${label}; did you forget to register a subtype?")
+                return delegate.fromJsonTree(jsonElement)
+            }
+
+            @Throws(IOException::class)
+            override fun write(out: JsonWriter, value: R) {
+                val srcType = value.javaClass
+                val label = subtypeToLabel[srcType]
+                val delegate = subtypeToDelegate[srcType] as TypeAdapter<R>?
+                    ?: throw JsonParseException("cannot serialize ${srcType.name}; did you forget to register a subtype?")
+                val jsonObject = delegate.toJsonTree(value).asJsonObject
+                if (jsonObject.has(typeFieldName)) {
+                    throw JsonParseException("cannot serialize ${srcType.name} because it already defines a field named ${typeFieldName}")
+                }
+                val clone = JsonObject()
+                clone.add(typeFieldName, gson.toJsonTree(label))
+                for ((key, value1) in jsonObject.entrySet()) {
+                    clone.add(key, value1)
+                }
+                Streams.write(clone, out)
+            }
+        }.nullSafe()
     }
 }

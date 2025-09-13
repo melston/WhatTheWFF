@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
                         is Screen.GameModeSelect -> GameModeScreen(
                             onProblemGenerated = { problem ->
                                 previousScreen = Screen.GameModeSelect
-                                currentScreen = Screen.Proof(problem)
+                                currentScreen = Screen.Proof(problem, "Generated Problem")
                             },
                             onBackClicked = { currentScreen = Screen.Main }
                         )
@@ -66,13 +66,14 @@ class MainActivity : ComponentActivity() {
                         is Screen.ProblemList -> ProblemListScreen(
                             problemSetTitle = screen.setTitle,
                             onBackPressed = { currentScreen = Screen.ProblemSetBrowser },
-                            onProblemSelected = { problem ->
+                            onProblemSelected = { problem, problemSetTitle ->
                                 previousScreen = Screen.ProblemList(screen.setTitle)
-                                currentScreen = Screen.Proof(problem)
+                                currentScreen = Screen.Proof(problem, problemSetTitle)
                             }
                         )
                         is Screen.Proof -> ProofScreen(
                             problem = screen.problem,
+                            problemSetTitle = screen.setTitle,
                             onBackClicked = { currentScreen = previousScreen }
                         )
                     }

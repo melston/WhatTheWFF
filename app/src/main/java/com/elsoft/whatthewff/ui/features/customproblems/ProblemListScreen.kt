@@ -29,7 +29,7 @@ import com.elsoft.whatthewff.logic.Problem
 fun ProblemListScreen(
     problemSetTitle: String,
     onBackPressed: () -> Unit,
-    onProblemSelected: (Problem) -> Unit
+    onProblemSelected: (Problem, String) -> Unit
 ) {
     val context = LocalContext.current
     val vm: ProblemListViewModel = viewModel(
@@ -62,7 +62,7 @@ fun ProblemListScreen(
                             conclusion = customProblem.conclusion,
                             difficulty = 0 // Difficulty isn't relevant for custom problems
                         )
-                        onProblemSelected(problem)
+                        onProblemSelected(problem, problemSetTitle)
                     }
                 )
                 Divider()
