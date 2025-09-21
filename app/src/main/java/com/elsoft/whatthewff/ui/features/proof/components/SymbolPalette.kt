@@ -14,11 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.elsoft.whatthewff.logic.AvailableTiles
 import com.elsoft.whatthewff.logic.LogicTile
-import com.elsoft.whatthewff.ui.features.proof.DragData
-import com.elsoft.whatthewff.ui.features.proof.DraggableItem
 
 @Composable
-fun SymbolPalette(variables: List<LogicTile>) {
+fun SymbolPalette(variables: List<LogicTile>,
+                  state: DragAndDropState) {
     val operators = AvailableTiles.connectors
     LazyRow(
         modifier = Modifier.Companion
@@ -27,7 +26,7 @@ fun SymbolPalette(variables: List<LogicTile>) {
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         items(variables) { symbol ->
-            DraggableItem(dataToDrop = DragData.NewTile(symbol)) {
+            DraggableItem(dataToDrop = DragData.NewTile(symbol), content = {
                 Button(onClick = { /* Drag Only */ }) {
                     Text(
                         symbol.symbol,
@@ -35,7 +34,7 @@ fun SymbolPalette(variables: List<LogicTile>) {
                         fontFamily = FontFamily.Companion.Monospace
                     )
                 }
-            }
+            }, state = state)
         }
     }
     LazyRow(
@@ -45,7 +44,7 @@ fun SymbolPalette(variables: List<LogicTile>) {
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         items(operators) { operator ->
-            DraggableItem(dataToDrop = DragData.NewTile(operator)) {
+            DraggableItem(dataToDrop = DragData.NewTile(operator), content = {
                 Button(onClick = { /* Drag Only */ }) {
                     Text(
                         operator.symbol,
@@ -53,7 +52,7 @@ fun SymbolPalette(variables: List<LogicTile>) {
                         fontFamily = FontFamily.Companion.Monospace
                     )
                 }
-            }
+            }, state = state)
         }
     }
 }

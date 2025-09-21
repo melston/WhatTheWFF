@@ -108,7 +108,7 @@ fun ProblemItem(
                 onClick = onClicked,
                 onLongClick = onLongClicked
             )
-            .padding(vertical = 16.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically // Center items vertically in the row
     ) {
         Box(
@@ -124,7 +124,7 @@ fun ProblemItem(
             }
         }
 
-        Spacer(Modifier.width(16.dp)) // Space between icon and text
+        Spacer(Modifier.width(10.dp)) // Space between icon and text
 
         Column {
             Text(problem.id, style = MaterialTheme.typography.titleMedium)

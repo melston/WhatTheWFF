@@ -1,6 +1,6 @@
 // File: ui/features/proof/ProofScreen.kt
 // This file contains the Jetpack Compose UI for the main proof-building screen,
-// now with full support for sub-proofs, reiteration, and RAA.
+// now with full support for sub-proofs, reiteration, and Reductio ad Absurdum (RAA).
 
 package com.elsoft.whatthewff.ui.features.proof
 
@@ -15,21 +15,15 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -49,34 +43,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.elsoft.whatthewff.data.ProofViewModel
 import com.elsoft.whatthewff.logic.AvailableTiles
 import com.elsoft.whatthewff.logic.Formula
 import com.elsoft.whatthewff.logic.FormulaNode
 import com.elsoft.whatthewff.logic.Justification
-import com.elsoft.whatthewff.logic.LogicTile
 import com.elsoft.whatthewff.logic.Problem
 import com.elsoft.whatthewff.logic.Proof
 import com.elsoft.whatthewff.logic.ProofExporter
@@ -90,25 +74,12 @@ import com.elsoft.whatthewff.ui.features.proof.components.DeleteConfirmationDial
 import com.elsoft.whatthewff.ui.features.proof.components.FabMenu
 import com.elsoft.whatthewff.ui.features.proof.components.ProofLineView
 import com.elsoft.whatthewff.ui.features.proof.components.SymbolPalette
-
-// --- Drag and Drop State ---
-
-sealed class DragData {
-    data class NewTile(val tile: LogicTile) : DragData()
-    data class ExistingTile(val tile: LogicTile, val index: Int) : DragData()
-}
-
-private class DragAndDropState {
-    var isDragging: Boolean by mutableStateOf(false)
-    var dragPosition by mutableStateOf(Offset.Zero)
-    var draggableContent by mutableStateOf<(@Composable () -> Unit)?>(null)
-    var draggableContentSize by mutableStateOf(IntSize.Zero)
-    var dataToDrop by mutableStateOf<DragData?>(null)
-}
+import com.elsoft.whatthewff.ui.features.proof.components.ConstructionArea
+import com.elsoft.whatthewff.ui.features.proof.components.DragAndDropState
 
 private val LocalDragAndDropState = compositionLocalOf { DragAndDropState() }
 
-// --- Drag and Drop Composables ---
+// TODO: Find a way to move this into components/DragAndDropSupport.kt as well.
 @Composable
 fun DragAndDropContainer(
     modifier: Modifier = Modifier,
@@ -121,57 +92,14 @@ fun DragAndDropContainer(
             if (state.isDragging) {
                 Box(modifier = Modifier.graphicsLayer {
                     // Center the dragged item under the user's finger
-                    translationX = state.dragPosition.x - state.draggableContentSize.width / 2
-                    translationY = state.dragPosition.y - state.draggableContentSize.height / 2
+                    translationX =
+                        state.dragPosition.x - state.draggableContentSize.width / 2
+                    translationY =
+                        state.dragPosition.y - state.draggableContentSize.height / 2
                 }) {
                     state.draggableContent?.invoke()
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun DraggableItem(
-    modifier: Modifier = Modifier,
-    dataToDrop: DragData,
-    content: @Composable () -> Unit
-) {
-    var currentSize by remember { mutableStateOf(IntSize.Zero) }
-    var currentPosition by remember { mutableStateOf(Offset.Zero) } // keep track of global position
-    val dragAndDropState = LocalDragAndDropState.current
-    val isCurrentlyDragged = dragAndDropState.isDragging && dragAndDropState.dataToDrop == dataToDrop
-
-    Box(
-        modifier = modifier
-            .onGloballyPositioned {
-                currentSize = it.size
-                currentPosition = it.localToWindow(Offset.Zero) // Store the global position
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        dragAndDropState.isDragging = true
-                        dragAndDropState.dataToDrop = dataToDrop
-                        dragAndDropState.draggableContentSize = currentSize
-                        // Correctly calculate the initial drag position using the item's global position
-                        dragAndDropState.dragPosition = currentPosition + offset
-//                        dragAndDropState.dragPosition = currentSize.center.toOffset() + offset
-                        dragAndDropState.draggableContent = content
-                    },
-                    onDragEnd = {
-                        dragAndDropState.isDragging = false
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        dragAndDropState.dragPosition += dragAmount
-                    }
-                )
-            }
-    ) {
-        val alpha = if (isCurrentlyDragged && dataToDrop is DragData.ExistingTile) 0f else 1f
-        Box(modifier = Modifier.graphicsLayer { this.alpha = alpha }) {
-            content()
         }
     }
 }
@@ -190,10 +118,9 @@ fun ProofScreen(
     val isViewOnly = initialProof != null
     var proof by remember {
         mutableStateOf(
-            initialProof ?:
-                Proof(lines = problem.premises.mapIndexed {
-                          i, p -> ProofLine(i + 1, p, Justification.Premise)
-                })
+            initialProof ?: Proof(lines = problem.premises.mapIndexed { i, p ->
+                ProofLine(i + 1, p, Justification.Premise)
+            })
         )
     }
     var currentFormula by remember { mutableStateOf(Formula(emptyList())) }
@@ -221,7 +148,9 @@ fun ProofScreen(
         )
     )
 
-    // Dynamically create the symbol palette based on the problem
+    // Dynamically create the symbol palette based on the problem.  Only show the variables
+    // that are used in the current proof.
+    // TODO:  we may want to give users the ability to introduce new variables as needed.
     val paletteTiles = remember(problem) {
         val variables = (problem.premises.flatMap { it.tiles } + problem.conclusion.tiles)
             .filter { it.type == SymbolType.VARIABLE }
@@ -241,9 +170,11 @@ fun ProofScreen(
                         outputStream.write(htmlContent.toByteArray())
                     }
                 } catch (e: Exception) {
-                    Toast.makeText(context,
-                                   "Error Saving File: ${e.message}",
-                                   Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        "Error Saving File: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -265,7 +196,10 @@ fun ProofScreen(
                     },
                     actions = {
                         IconButton(onClick = { showMenu = !showMenu }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = "More options"
+                            )
                         }
                         DropdownMenu(
                             expanded = showMenu,
@@ -274,7 +208,8 @@ fun ProofScreen(
                             DropdownMenuItem(
                                 text = { Text("Save Solution As...") }, // Changed label for clarity
                                 onClick = {
-                                    val defaultFileName = "Solution - ${problem.name.replace(" ", "_")}.html"
+                                    val defaultFileName =
+                                        "Solution - ${problem.name.replace(" ", "_")}.html"
                                     fileSaverLauncher.launch(defaultFileName)
                                     showMenu = false
                                 }
@@ -282,14 +217,19 @@ fun ProofScreen(
                             DropdownMenuItem(
                                 text = { Text("Share Solution") },
                                 onClick = {
-                                    val htmlContent = ProofExporter.formatProofAsHtml(problem, proof)
+                                    val htmlContent =
+                                        ProofExporter.formatProofAsHtml(problem, proof)
                                     val sendIntent = Intent().apply {
                                         action = Intent.ACTION_SEND
                                         putExtra(Intent.EXTRA_TEXT, htmlContent)
-                                        putExtra(Intent.EXTRA_SUBJECT, "Proof Solution: ${problem.name}")
+                                        putExtra(
+                                            Intent.EXTRA_SUBJECT,
+                                            "Proof Solution: ${problem.name}"
+                                        )
                                         type = "text/html"
                                     }
-                                    val shareIntent = Intent.createChooser(sendIntent, "Share Proof")
+                                    val shareIntent =
+                                        Intent.createChooser(sendIntent, "Share Proof")
                                     context.startActivity(shareIntent)
                                     showMenu = false
                                 }
@@ -324,7 +264,7 @@ fun ProofScreen(
                         onStartSubproof = {
                             val assumptionFormula = if (selectedLines.size == 1) {
                                 proof.lines.getOrNull(selectedLines.first() - 1)?.formula
-                                    ?: currentFormula
+                                ?: currentFormula
                             } else {
                                 currentFormula
                             }
@@ -338,7 +278,8 @@ fun ProofScreen(
                             proof = Proof(proof.lines + newProofLine)
                             subproofStartLines = subproofStartLines + (proof.lines.size)
                             currentDepth++
-                            currentFormula = Formula(emptyList()) // Always clear construction area
+                            currentFormula =
+                                Formula(emptyList()) // Always clear construction area
                             selectedLines = emptySet() // Clear selection after using it
                             isFabMenuExpanded = false
                         },
@@ -353,26 +294,31 @@ fun ProofScreen(
 
                             // Check if the last line of the sub-proof is a contradiction
                             val lastLineNode = WffParser.parse(conclusionLine.formula)
-                            val isContradiction = if (lastLineNode is FormulaNode.BinaryOpNode &&
-                                lastLineNode.operator.symbol == "∧"
-                            ) {
-                                val leftNegatedTree = WffParser.parse(
-                                    RuleGenerators.fNeg(
-                                        RuleGenerators.treeToFormula(
-                                            lastLineNode.left
+                            val isContradiction =
+                                if (lastLineNode is FormulaNode.BinaryOpNode &&
+                                    lastLineNode.operator.symbol == "∧"
+                                ) {
+                                    val leftNegatedTree = WffParser.parse(
+                                        RuleGenerators.fNeg(
+                                            RuleGenerators.treeToFormula(
+                                                lastLineNode.left
+                                            )
                                         )
                                     )
-                                )
-                                leftNegatedTree == lastLineNode.right
-                            } else {
-                                false
-                            }
+                                    leftNegatedTree == lastLineNode.right
+                                } else {
+                                    false
+                                }
 
                             if (isContradiction) {
                                 // RAA: Conclude the negation of the assumption
                                 finalFormula = RuleGenerators.fNeg(assumptionLine.formula)
                                 justification =
-                                    Justification.ReductioAdAbsurdum(startLine, endLine, endLine)
+                                    Justification.ReductioAdAbsurdum(
+                                        startLine,
+                                        endLine,
+                                        endLine
+                                    )
                             } else {
                                 // II: Conclude the implication, ensuring it's correctly parenthesized.
                                 val antecedent = assumptionLine.formula
@@ -381,8 +327,8 @@ fun ProofScreen(
                                 val antecedentTiles = WffParser.parse(antecedent)?.let {
                                     if (it is FormulaNode.BinaryOpNode) {
                                         listOf(AvailableTiles.leftParen) +
-                                                antecedent.tiles +
-                                                listOf(AvailableTiles.rightParen)
+                                        antecedent.tiles +
+                                        listOf(AvailableTiles.rightParen)
                                     } else {
                                         antecedent.tiles
                                     }
@@ -391,8 +337,8 @@ fun ProofScreen(
                                 val consequentTiles = WffParser.parse(consequent)?.let {
                                     if (it is FormulaNode.BinaryOpNode) {
                                         listOf(AvailableTiles.leftParen) +
-                                                consequent.tiles +
-                                                listOf(AvailableTiles.rightParen)
+                                        consequent.tiles +
+                                        listOf(AvailableTiles.rightParen)
                                     } else {
                                         consequent.tiles
                                     }
@@ -400,11 +346,14 @@ fun ProofScreen(
 
                                 finalFormula = Formula(
                                     antecedentTiles +
-                                            listOf(AvailableTiles.implies) +
-                                            consequentTiles
+                                    listOf(AvailableTiles.implies) +
+                                    consequentTiles
                                 )
                                 justification =
-                                    Justification.ImplicationIntroduction(startLine, endLine)
+                                    Justification.ImplicationIntroduction(
+                                        startLine,
+                                        endLine
+                                    )
                             }
 
                             val newProofLine = ProofLine(
@@ -462,7 +411,9 @@ fun ProofScreen(
 
                 // --- Proof Display Area ---
                 Card(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(2.dp)
                 ) {
                     LazyColumn(
@@ -475,7 +426,8 @@ fun ProofScreen(
                                 isSelected = selectedLines.contains(line.lineNumber),
                                 onLineClicked = {
                                     selectedLines =
-                                        if (selectedLines.contains(it)) selectedLines - it else selectedLines + it
+                                        if (selectedLines.contains(it)) selectedLines - it
+                                        else selectedLines + it
                                 },
                                 onDeleteClicked = { lineToDelete = it }
                             )
@@ -498,10 +450,11 @@ fun ProofScreen(
                         formula = currentFormula,
                         onFormulaChange = { newFormula ->
                             currentFormula = newFormula
-                        }
+                        },
+                        state = LocalDragAndDropState.current
                     )
 
-                    SymbolPalette(variables = paletteTiles)
+                    SymbolPalette(variables = paletteTiles, LocalDragAndDropState.current)
 
                     Button(
                         onClick = {
@@ -509,21 +462,30 @@ fun ProofScreen(
                             // We do this next to allow for the case where the goal is expressed with
                             // surrounding parens but the user doesn't include them.  If the two formulas
                             // are otherwise equal, we consider the proof valid.
-                            val finalLineMatchesGoal = proof.lines.lastOrNull()?.let { lastLine ->
-                                WffParser.parse(lastLine.formula) == WffParser.parse(problem.conclusion)
-                            } ?: false // If there's no last line, it can't match.
+                            val finalLineMatchesGoal =
+                                proof.lines.lastOrNull()?.let { lastLine ->
+                                    WffParser.parse(lastLine.formula) == WffParser.parse(
+                                        problem.conclusion
+                                    )
+                                } ?: false // If there's no last line, it can't match.
 
                             feedbackMessage = when {
                                 !result.isValid -> "Error on line ${result.errorLine}: ${result.errorMessage}"
                                 !finalLineMatchesGoal -> "Proof is valid, but does not reach the goal."
                                 else -> {
                                     proofViewModel.saveProof(proof)
-                                    Toast.makeText(context, "Solution Saved!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        context,
+                                        "Solution Saved!",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                     "Congratulations! Proof is valid and complete."
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
                     ) { Text("Validate Proof") }
                 }
             }
@@ -537,7 +499,12 @@ fun ProofScreen(
                     currentDepth = currentDepth,
                     onDismiss = { showAddLineDialog = false },
                     onConfirm = { newFormula, justification ->
-                        val newProofLine = ProofLine(proof.lines.size + 1, newFormula, justification, currentDepth)
+                        val newProofLine = ProofLine(
+                            proof.lines.size + 1,
+                            newFormula,
+                            justification,
+                            currentDepth
+                        )
                         proof = Proof(proof.lines + newProofLine)
                         currentFormula = Formula(emptyList())
                         selectedLines = emptySet()
@@ -554,7 +521,8 @@ fun ProofScreen(
                             // Adjust sub-proof state if deletion happened inside one
                             if (proof.lines.size < (subproofStartLines.lastOrNull() ?: 0)) {
                                 val lastStart = subproofStartLines.last()
-                                subproofStartLines = subproofStartLines.filter { it < lastStart }
+                                subproofStartLines =
+                                    subproofStartLines.filter { it < lastStart }
                                 currentDepth = subproofStartLines.size
                             }
                         }
@@ -582,7 +550,8 @@ private fun printProof(context: Context, problem: Problem, proof: Proof) {
             super.onPageFinished(view, url)
 
             // Once the page is loaded, create the print job
-            val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val printManager =
+                context.getSystemService(Context.PRINT_SERVICE) as PrintManager
             val jobName = "Proof Solution - ${problem.name}"
             val printAdapter = view.createPrintDocumentAdapter(jobName)
 
@@ -596,114 +565,3 @@ private fun printProof(context: Context, problem: Problem, proof: Proof) {
     // Load our generated HTML into the WebView
     webView.loadDataWithBaseURL(null, htmlContent, "text/HTML", "UTF-8", null)
 }
-
-// --- UI Sub-components ---
-
-@Composable
-fun ConstructionArea(
-    formula: Formula,
-    onFormulaChange: (Formula) -> Unit
-) {
-    val dragAndDropState = LocalDragAndDropState.current
-    var dropTargetBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-    var insertionIndex by remember { mutableIntStateOf(-1) }
-    val itemPositions = remember { mutableStateMapOf<Int, Offset>() }
-    val itemWidths = remember { mutableStateMapOf<Int, Int>() }
-
-    // This is a unified effect to handle both hover detection during a drag
-    // and the drop action when the drag ends. It avoids race conditions.
-    LaunchedEffect(dragAndDropState.isDragging, dragAndDropState.dragPosition) {
-        if (dragAndDropState.isDragging) {
-            // While dragging, continuously calculate the hover state and insertion index.
-            val isHovering = dropTargetBounds?.contains(dragAndDropState.dragPosition) ?: false
-            if (isHovering) {
-                var newIndex = formula.tiles.size
-                for (i in formula.tiles.indices) {
-                    val pos = itemPositions[i]
-                    val width = itemWidths[i]
-                    if (pos != null && width != null) {
-                        if (dragAndDropState.dragPosition.x < pos.x + width / 2) {
-                            newIndex = i
-                            break
-                        }
-                    }
-                }
-                insertionIndex = newIndex
-            } else {
-                insertionIndex = -1
-            }
-        } else {
-            // When not dragging (i.e., the drag just ended), handle the drop.
-            if (dragAndDropState.dataToDrop != null) { // Check for pending data
-                val data = dragAndDropState.dataToDrop
-                if (insertionIndex != -1) { // Dropped inside the construction area
-                    val currentTiles = formula.tiles.toMutableList()
-                    when (data) {
-                        is DragData.NewTile -> {
-                            currentTiles.add(insertionIndex, data.tile)
-                        }
-                        is DragData.ExistingTile -> {
-                            val draggedTile = currentTiles.removeAt(data.index)
-                            val finalIndex = if (data.index < insertionIndex) insertionIndex - 1 else insertionIndex
-                            currentTiles.add(finalIndex, draggedTile)
-                        }
-                        null -> {} // Don't do anything if no data.
-                    }
-                    onFormulaChange(Formula(currentTiles))
-                } else { // Dropped outside (delete)
-                    if (data is DragData.ExistingTile) {
-                        val currentTiles = formula.tiles.toMutableList()
-                        currentTiles.removeAt(data.index)
-                        onFormulaChange(Formula(currentTiles))
-                    }
-                }
-                // Reset state after handling the drop.
-                dragAndDropState.dataToDrop = null
-            }
-        }
-    }
-
-    Box(
-        modifier = Modifier.onGloballyPositioned {
-            dropTargetBounds = it.boundsInWindow()
-        }
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            colors = CardDefaults.cardColors(
-                containerColor = if (insertionIndex != -1) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                    .height(48.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                formula.tiles.forEachIndexed { index, tile ->
-                    if (insertionIndex == index) {
-                        Box(Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-                    }
-                    DraggableItem(dataToDrop = DragData.ExistingTile(tile, index)) {
-                        Text(
-                            text = tile.symbol,
-                            fontSize = 18.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier
-                                .padding(horizontal = 2.dp)
-                                .onGloballyPositioned {
-                                    itemPositions[index] = it.localToWindow(Offset.Zero)
-                                    itemWidths[index] = it.size.width
-                                }
-                        )
-                    }
-                }
-                if (insertionIndex == formula.tiles.size) {
-                    Box(Modifier.width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-                }
-            }
-        }
-    }
-}
-
