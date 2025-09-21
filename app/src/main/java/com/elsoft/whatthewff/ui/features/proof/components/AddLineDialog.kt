@@ -69,13 +69,20 @@ fun AddLineDialog(
     var validationError by remember { mutableStateOf<String?>(null) }
 
     // Calculate suggestions whenever the rule or selection changes in suggestion mode
-    LaunchedEffect(isSuggestionMode, selectedInferenceRule, selectedProofLines) {
+    LaunchedEffect(isSuggestionMode, selectedInferenceRule, selectedReplacementRule, selectedProofLines, tabIndex) {
         if (isSuggestionMode) {
-            suggestions = ProofSuggester.getSuggestions(
-                rule = selectedInferenceRule,
-                selectedLines = selectedProofLines
-            )
-            selectedSuggestion = null // Reset selection when suggestions change
+            suggestions = if (tabIndex == 0) { // Inference Tab
+                ProofSuggester.getInferenceSuggestions(
+                    rule = selectedInferenceRule,
+                    selectedLines = selectedProofLines
+                )
+            } else { // Replacement Tab
+                ProofSuggester.getReplacementSuggestions(
+                    rule = selectedReplacementRule,
+                    selectedLine = selectedProofLines.firstOrNull()
+                )
+            }
+            selectedSuggestion = null
         }
     }
 

@@ -5,6 +5,7 @@ package com.elsoft.whatthewff.logic
 
 import com.elsoft.whatthewff.logic.AvailableTiles.or
 import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.iff
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.not
 import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
@@ -78,7 +79,6 @@ object ReplacementStrategies {
 
 }
 
-
 /**
  * A singleton object that handles the application of replacement rules.
  */
@@ -96,14 +96,14 @@ object RuleReplacer {
         return when (rule) {
             ReplacementRule.DEMORGANS_THEOREM -> applyDeMorgans(rootNode)
             ReplacementRule.COMMUTATION -> applyCommutation(rootNode)
-            ReplacementRule.ASSOCIATION -> TODO()
-            ReplacementRule.DISTRIBUTION -> TODO()
-            ReplacementRule.DOUBLE_NEGATION -> TODO()
-            ReplacementRule.TRANSPOSITION -> TODO()
-            ReplacementRule.MATERIAL_IMPLICATION -> TODO()
-            ReplacementRule.MATERIAL_EQUIVALENCE -> TODO()
-            ReplacementRule.EXPORTATION -> TODO()
-            ReplacementRule.TAUTOLOGY -> TODO()
+            ReplacementRule.ASSOCIATION -> applyAssociation(rootNode)
+            ReplacementRule.DISTRIBUTION -> applyDistribution(rootNode)
+            ReplacementRule.DOUBLE_NEGATION -> applyDoubleNegation(rootNode)
+            ReplacementRule.TRANSPOSITION -> applyTransposition(rootNode)
+            ReplacementRule.MATERIAL_IMPLICATION -> applyMaterialImplication(rootNode)
+            ReplacementRule.MATERIAL_EQUIVALENCE -> applyMaterialEquivalence(rootNode)
+            ReplacementRule.EXPORTATION -> applyExportation(rootNode)
+            ReplacementRule.TAUTOLOGY -> applyTautology(rootNode)
         }
     }
 
@@ -122,64 +122,36 @@ object RuleReplacer {
 
     //----------------------- Replacement Implementations ---------------------------
 
-    /**
-     * Recursively applies DeMorgan's Theorem to a given node and all its children.
-     * Rule 1: ¬(P ∧ Q) ⇔ (¬P ∨ ¬Q)
-     * Rule 2: ¬(P ∨ Q) ⇔ (¬P ∧ ¬Q)
-     */
-    private fun applyDeMorgans(node: FormulaNode): List<FormulaNode> {
+    private fun applyAssociation(node: FormulaNode): List<FormulaNode> {
         val possibleNewTrees = mutableListOf<FormulaNode>()
-
-        // 1. Apply the rule at the CURRENT node, if possible.
-
-        // Form 1: ¬(P op Q) -> (¬P inv_op ¬Q)
-        if (node is FormulaNode.UnaryOpNode && node.operator == not &&
-            node.child is FormulaNode.BinaryOpNode) {
-            val innerNode = node.child as FormulaNode.BinaryOpNode
-            if (innerNode.operator == and || innerNode.operator == or) {
-                val p = innerNode.left
-                val q = innerNode.right
-                val inverseOp = if (innerNode.operator == and) AvailableTiles.or else AvailableTiles.and
-
-                val notP = negate(p)
-                val notQ = negate(q)
-
-                possibleNewTrees.add(FormulaNode.BinaryOpNode(inverseOp, notP, notQ))
+        // Form 1: (P op (Q op R)) -> ((P op Q) op R)
+        if (node is FormulaNode.BinaryOpNode && (node.operator == or || node.operator == and)) {
+            if (node.right is FormulaNode.BinaryOpNode && node.operator == (node.right as FormulaNode.BinaryOpNode).operator) {
+                val p = node.left
+                val q = (node.right as FormulaNode.BinaryOpNode).left
+                val r = (node.right as FormulaNode.BinaryOpNode).right
+                possibleNewTrees.add(FormulaNode.BinaryOpNode(node.operator, FormulaNode.BinaryOpNode(node.operator, p, q), r))
             }
         }
-
-        // Form 2: (P op Q) -> ¬(¬P inv_op ¬Q)
-        if (node is FormulaNode.BinaryOpNode && (node.operator == and || node.operator == or)) {
-            val p = node.left
-            val q = node.right
-            val inverseOp = if (node.operator == or) AvailableTiles.or else AvailableTiles.and
-
-            val notP = negate(p)
-            val notQ = negate(q)
-
-            val innerNode = FormulaNode.BinaryOpNode(inverseOp, notP, notQ)
-            possibleNewTrees.add(FormulaNode.UnaryOpNode(AvailableTiles.not, innerNode))
+        // Form 2: ((P op Q) op R) -> (P op (Q op R))
+        if (node is FormulaNode.BinaryOpNode && (node.operator == or || node.operator == and)) {
+            if (node.left is FormulaNode.BinaryOpNode && node.operator == (node.left as FormulaNode.BinaryOpNode).operator) {
+                val p = (node.left as FormulaNode.BinaryOpNode).left
+                val q = (node.left as FormulaNode.BinaryOpNode).right
+                val r = node.right
+                possibleNewTrees.add(FormulaNode.BinaryOpNode(node.operator, p, FormulaNode.BinaryOpNode(node.operator, q, r)))
+            }
         }
-
-        // 2. Recursively apply the rule to all CHILDREN nodes.
+        // Recurse
         when (node) {
-            is FormulaNode.UnaryOpNode -> {
-                applyDeMorgans(node.child).forEach { transformedChild ->
-                    possibleNewTrees.add(node.copy(child = transformedChild))
-                }
-            }
             is FormulaNode.BinaryOpNode -> {
-                applyDeMorgans(node.left).forEach { transformedLeft ->
-                    possibleNewTrees.add(node.copy(left = transformedLeft))
-                }
-                applyDeMorgans(node.right).forEach { transformedRight ->
-                    possibleNewTrees.add(node.copy(right = transformedRight))
-                }
+                applyAssociation(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyAssociation(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
             }
-            is FormulaNode.VariableNode -> { /* No children */ }
+            is FormulaNode.UnaryOpNode -> applyAssociation(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
         }
-
-        return possibleNewTrees
+        return possibleNewTrees.distinct()
     }
 
     /**
@@ -205,11 +177,11 @@ object RuleReplacer {
         when (node) {
             is FormulaNode.UnaryOpNode -> {
                 // Get all possible transformations of the child.
-                val childTransforms = applyCommutation(node.child)
                 // For each transformed child, create a new version of the parent UnaryOpNode.
-                childTransforms.forEach { txChild ->
-                    possibleNewTrees.add(node.copy(child = txChild))
-                }
+                applyCommutation(node.child)
+                    .forEach { txChild ->
+                        possibleNewTrees.add(node.copy(child = txChild))
+                    }
             }
             is FormulaNode.BinaryOpNode -> {
                 // Rebuild the node by recursively applying the rule to both children,
@@ -218,21 +190,285 @@ object RuleReplacer {
 
                 // Get all possible transformations of the left child.
                 // Keep the right child the same as the original.
-                applyCommutation(node.left).forEach { txLeft ->
-                    possibleNewTrees.add(node.copy(left = txLeft))
-                }
+                applyCommutation(node.left)
+                    .forEach { txLeft ->
+                        possibleNewTrees.add(node.copy(left = txLeft))
+                    }
 
                 // Get all possible transformations of the right child.
                 // Keep the left child the same as the original.
-                applyCommutation(node.right).forEach { txRight ->
-                    possibleNewTrees.add(node.copy(right = txRight))
-                }
+                applyCommutation(node.right)
+                    .forEach { txRight ->
+                        possibleNewTrees.add(node.copy(right = txRight))
+                    }
             }
-            is FormulaNode.VariableNode -> {
-                // A variable has no children, so do nothing.
-            }
+            // A variable has no children, so do nothing if not one of the above
+            is FormulaNode.VariableNode -> {}
         }
 
         return possibleNewTrees
+    }
+
+    /**
+     * Recursively applies DeMorgan's Theorem to a given node and all its children.
+     * Rule 1: ¬(P ∧ Q) ⇔ (¬P ∨ ¬Q)
+     * Rule 2: ¬(P ∨ Q) ⇔ (¬P ∧ ¬Q)
+     */
+    private fun applyDeMorgans(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // The inverse of the operator
+        val invOp = { op: LogicTile -> if (op == and) or else and }
+
+        // 1. Apply the rule at the CURRENT node, if possible.
+
+        // Form 1: ¬(P op Q) -> (¬P inv_op ¬Q)
+        if (node is FormulaNode.UnaryOpNode && node.operator == not && node.child is FormulaNode.BinaryOpNode) {
+            val child = node.child as FormulaNode.BinaryOpNode
+            if (child.operator == and || child.operator == or) {
+                possibleNewTrees.add(
+                    FormulaNode.BinaryOpNode(
+                        invOp(child.operator),
+                        negate(child.left),
+                        negate(child.right)
+                    )
+                )
+            }
+        }
+
+        // Form 2: (P op Q) -> ¬(¬P inv_op ¬Q)
+        if (node is FormulaNode.BinaryOpNode && (node.operator == and || node.operator == or)) {
+            possibleNewTrees.add(
+                negate(
+                    FormulaNode.BinaryOpNode(
+                        invOp(node.operator),
+                        negate(node.left),
+                        negate(node.right)
+                    )
+                )
+            )
+        }
+
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyDeMorgans(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyDeMorgans(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyDeMorgans(node.child)
+                                            .forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    private fun applyDistribution(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // Form 1: (P & (Q v R)) -> ((P & Q) v (P & R))
+        if (node is FormulaNode.BinaryOpNode && node.operator == and &&
+            node.right is FormulaNode.BinaryOpNode && (node.right as FormulaNode.BinaryOpNode).operator == or) {
+            val p = node.left
+            val q = (node.right as FormulaNode.BinaryOpNode).left
+            val r = (node.right as FormulaNode.BinaryOpNode).right
+            possibleNewTrees.add(
+                FormulaNode.BinaryOpNode(or,
+                                         FormulaNode.BinaryOpNode(and, p, q),
+                                         FormulaNode.BinaryOpNode(and, p, r)
+                )
+            )
+        }
+        // Form 2: ((P & Q) v (P & R)) -> (P & (Q v R))
+        if (node is FormulaNode.BinaryOpNode && node.operator == or &&
+            node.left is FormulaNode.BinaryOpNode && (node.left as FormulaNode.BinaryOpNode).operator == and &&
+            node.right is FormulaNode.BinaryOpNode && (node.right as FormulaNode.BinaryOpNode).operator == and) {
+            val p1 = (node.left as FormulaNode.BinaryOpNode).left
+            val q = (node.left as FormulaNode.BinaryOpNode).right
+            val p2 = (node.right as FormulaNode.BinaryOpNode).left
+            val r = (node.right as FormulaNode.BinaryOpNode).right
+            if (p1 == p2) {
+                possibleNewTrees.add(FormulaNode.BinaryOpNode(and, p1, FormulaNode.BinaryOpNode(or, q, r)))
+            }
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyDistribution(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyDistribution(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyDistribution(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    /**
+     * Recursively applies the Double Negation rule to a given node and all its children.
+     */
+    private fun applyDoubleNegation(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // Form 1: A -> ~~A
+        possibleNewTrees.add(negate(negate(node)))
+        // Form 2: ~~A -> A
+        if (node is FormulaNode.UnaryOpNode && node.operator == not &&
+            node.child is FormulaNode.UnaryOpNode && (node.child as FormulaNode.UnaryOpNode).operator == not
+        ) {
+            possibleNewTrees.add((node.child as FormulaNode.UnaryOpNode).child)
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyDoubleNegation(node.left).forEach { transformedLeft ->
+                    possibleNewTrees.add(node.copy(left = transformedLeft))
+                }
+                applyDoubleNegation(node.right).forEach { transformedRight ->
+                    possibleNewTrees.add(node.copy(right = transformedRight))
+                }
+            }
+            is FormulaNode.UnaryOpNode -> {
+                applyDoubleNegation(node.child).forEach { transformedChild ->
+                    possibleNewTrees.add(node.copy(child = transformedChild))
+                }
+            }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    private fun applyExportation(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // Form 1: ((P & Q) -> R) -> (P -> (Q -> R))
+        if (node is FormulaNode.BinaryOpNode && node.operator == implies &&
+            node.left is FormulaNode.BinaryOpNode && (node.left as FormulaNode.BinaryOpNode).operator == and) {
+            val p = (node.left as FormulaNode.BinaryOpNode).left
+            val q = (node.left as FormulaNode.BinaryOpNode).right
+            val r = node.right
+            possibleNewTrees.add(FormulaNode.BinaryOpNode(implies, p, FormulaNode.BinaryOpNode(implies, q, r)))
+        }
+        // Form 2: (P -> (Q -> R)) -> ((P & Q) -> R)
+        if (node is FormulaNode.BinaryOpNode && node.operator == implies &&
+            node.right is FormulaNode.BinaryOpNode && (node.right as FormulaNode.BinaryOpNode).operator == implies) {
+            val p = node.left
+            val q = (node.right as FormulaNode.BinaryOpNode).left
+            val r = (node.right as FormulaNode.BinaryOpNode).right
+            possibleNewTrees.add(FormulaNode.BinaryOpNode(implies, FormulaNode.BinaryOpNode(and, p, q), r))
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyExportation(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyExportation(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyExportation(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    private fun applyMaterialEquivalence(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // Form 1: (P <-> Q) -> ((P -> Q) & (Q -> P))
+        if (node is FormulaNode.BinaryOpNode && node.operator == iff) {
+            val p = node.left
+            val q = node.right
+            possibleNewTrees.add(
+                FormulaNode.BinaryOpNode(and,
+                                         FormulaNode.BinaryOpNode(implies, p, q),
+                                         FormulaNode.BinaryOpNode(implies, q, p)
+                )
+            )
+        }
+        // Form 2: ((P -> Q) & (Q -> P)) -> (P <-> Q)
+        if (node is FormulaNode.BinaryOpNode && node.operator == and &&
+            node.left is FormulaNode.BinaryOpNode && (node.left as FormulaNode.BinaryOpNode).operator == implies &&
+            node.right is FormulaNode.BinaryOpNode && (node.right as FormulaNode.BinaryOpNode).operator == implies) {
+            val imp1 = node.left as FormulaNode.BinaryOpNode
+            val imp2 = node.right as FormulaNode.BinaryOpNode
+            if (imp1.left == imp2.right && imp1.right == imp2.left) {
+                possibleNewTrees.add(FormulaNode.BinaryOpNode(iff, imp1.left, imp1.right))
+            }
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyMaterialEquivalence(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyMaterialEquivalence(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyMaterialEquivalence(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    private fun applyMaterialImplication(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // Form 1: (P -> Q) -> (~P v Q)
+        if (node is FormulaNode.BinaryOpNode && node.operator == implies) {
+            possibleNewTrees.add(FormulaNode.BinaryOpNode(or, negate(node.left), node.right))
+        }
+        // Form 2: (~P v Q) -> (P -> Q)
+        if (node is FormulaNode.BinaryOpNode && node.operator == or && node.left is FormulaNode.UnaryOpNode) {
+            val p = (node.left as FormulaNode.UnaryOpNode).child
+            val q = node.right
+            possibleNewTrees.add(FormulaNode.BinaryOpNode(implies, p, q))
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyMaterialImplication(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyMaterialImplication(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyMaterialImplication(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    private fun applyTautology(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // Form 1: P -> (P v P)
+        possibleNewTrees.add(FormulaNode.BinaryOpNode(or, node, node))
+        // Form 2: P -> (P & P)
+        possibleNewTrees.add(FormulaNode.BinaryOpNode(and, node, node))
+        // Form 3: (P v P) -> P
+        if (node is FormulaNode.BinaryOpNode && node.operator == or && node.left == node.right) {
+            possibleNewTrees.add(node.left)
+        }
+        // Form 4: (P & P) -> P
+        if (node is FormulaNode.BinaryOpNode && node.operator == and && node.left == node.right) {
+            possibleNewTrees.add(node.left)
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyTautology(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyTautology(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyTautology(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
+    }
+
+    private fun applyTransposition(node: FormulaNode): List<FormulaNode> {
+        val possibleNewTrees = mutableListOf<FormulaNode>()
+        // (P -> Q) <-> (~Q -> ~P)
+        if (node is FormulaNode.BinaryOpNode && node.operator == implies) {
+            possibleNewTrees.add(
+                FormulaNode.BinaryOpNode(
+                    implies,
+                    negate(node.right),
+                    negate(node.left)
+                )
+            )
+        }
+        // Recurse
+        when (node) {
+            is FormulaNode.BinaryOpNode -> {
+                applyTransposition(node.left).forEach { possibleNewTrees.add(node.copy(left = it)) }
+                applyTransposition(node.right).forEach { possibleNewTrees.add(node.copy(right = it)) }
+            }
+            is FormulaNode.UnaryOpNode -> applyTransposition(node.child).forEach { possibleNewTrees.add(node.copy(child = it)) }
+            is FormulaNode.VariableNode -> {}
+        }
+        return possibleNewTrees.distinct()
     }
 }
