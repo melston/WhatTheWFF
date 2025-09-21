@@ -6,8 +6,6 @@ package com.elsoft.whatthewff.logic
 import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.not
-import com.elsoft.whatthewff.logic.AvailableTiles.or
-import com.elsoft.whatthewff.logic.RuleGenerators.fOr
 import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
 /**
@@ -34,132 +32,86 @@ object ProofValidator {
     fun validate(proof: Proof): ValidationResult {
         // Optimization: Store parsed trees to avoid re-parsing on every reference.
         val provenTrees = mutableMapOf<Int, FormulaNode>()
+        var currentDepth = 0
 
-        for (line in proof.lines) {
-            // 1. Every line must be a parsable WFF.
+        for ((index, line) in proof.lines.withIndex()) {
+            // --- Scope Validation ---
+            if (line.depth > currentDepth + 1 || (line.depth < currentDepth && line.justification !is Justification.ImplicationIntroduction && line.justification !is Justification.ReductioAdAbsurdum)) {
+                return ValidationResult(
+                    false,
+                    "Invalid indentation change.",
+                    line.lineNumber
+                )
+            }
+            currentDepth = line.depth
+
             val currentTree = WffParser.parse(line.formula)
-                ?: return ValidationResult(false, "Line ${line.lineNumber} is not a Well-Formed Formula.")
+            if (currentTree == null) {
+                return ValidationResult(
+                    false,
+                    "Not a Well-Formed Formula.",
+                    line.lineNumber
+                )
+            }
 
-            // 2. Validate the justification for the line.
-            val justificationResult = when (val just = line.justification) {
-                is Justification.Premise -> ValidationResult(true) // Premises are assumed valid.
-                is Justification.Assumption -> ValidationResult(true) // Assumptions are assumed valid.
-                is Justification.Reiteration -> validateReiteration(currentTree, just, proof, line.lineNumber, line.depth)
-                is Justification.Inference -> validateInference(currentTree, just, provenTrees, line.lineNumber)
-                is Justification.Replacement -> validateReplacement(currentTree, just, provenTrees, line.lineNumber)
-                is Justification.ImplicationIntroduction -> validateImplicationIntroduction(currentTree, just, proof, line.lineNumber)
-                is Justification.ReductioAdAbsurdum -> validateReductioAdAbsurdum(currentTree, just, proof, line.lineNumber)
+            // Determine all lines currently in scope
+            val inScopeLines = proof.lines.take(index).filter { prevLine ->
+                prevLine.depth <= line.depth ||
+                // Allow referencing the assumption of the current sub-proof
+                (line.depth > 0 &&
+                 prevLine.lineNumber == proof.lines.lastOrNull {
+                     it.depth < line.depth && it.justification is Justification.Assumption
+                 }?.lineNumber)
+            }.map { it.lineNumber }.toSet()
+
+
+            val justificationResult = when (val justification = line.justification) {
+                is Justification.Premise ->
+                    if (line.depth == 0) ValidationResult(true)
+                    else ValidationResult(
+                        false,
+                        "Premises must be at the main proof level."
+                    )
+
+                is Justification.Assumption ->
+                    if (index > 0 && line.depth == proof.lines[index - 1].depth + 1)
+                        ValidationResult(true)
+                    else ValidationResult(false, "Assumptions must start a new sub-proof.")
+
+                is Justification.Inference ->
+                    validateInference(
+                        currentTree,
+                        justification,
+                        provenTrees,
+                        inScopeLines,
+                        line.lineNumber
+                    )
+
+                is Justification.Replacement ->
+                    validateReplacement(
+                        currentTree,
+                        justification,
+                        provenTrees,
+                        inScopeLines
+                    )
+
+                is Justification.ImplicationIntroduction ->
+                    validateImplicationIntroduction(currentTree, justification, proof, line)
+
+                is Justification.ReductioAdAbsurdum ->
+                    validateReductioAdAbsurdum(currentTree, justification, proof, line)
+
+                is Justification.Reiteration ->
+                    validateReiteration(currentTree, justification, proof, inScopeLines)
             }
 
             if (!justificationResult.isValid) {
-                return justificationResult // Return the first error found.
+                return justificationResult.copy(errorLine = line.lineNumber)
             }
-
-            // If the line is valid, add its parsed tree to our map.
             provenTrees[line.lineNumber] = currentTree
         }
+
         return ValidationResult(true, "Proof is valid!")
-    }
-
-    private fun validateReductioAdAbsurdum(
-        conclusionTree: FormulaNode,
-        justification: Justification.ReductioAdAbsurdum,
-        proof: Proof,
-        currentLineNumber: Int
-    ): ValidationResult {
-        // 1. Get the assumption and the contradiction lines from the sub-proof
-        val assumptionLine = proof.lines.getOrNull(justification.subproofStart - 1)
-        val contradictionLine = proof.lines.getOrNull(justification.contradictionLine - 1)
-
-        if (assumptionLine == null || contradictionLine == null) {
-            return ValidationResult(false, "RAA refers to invalid sub-proof lines.", currentLineNumber)
-        }
-        if (contradictionLine.lineNumber != justification.subproofEnd) {
-            return ValidationResult(false, "Contradiction must be the last line of the sub-proof.", currentLineNumber)
-        }
-
-
-        // 2. Check that the contradiction line is actually a contradiction (P ∧ ¬P)
-        val contradictionTree = WffParser.parse(contradictionLine.formula)
-        if (contradictionTree !is FormulaNode.BinaryOpNode || contradictionTree.operator.symbol != "∧") {
-            return ValidationResult(false, "Line ${justification.contradictionLine} is not a valid contradiction (not a conjunction).", currentLineNumber)
-        }
-
-        val left = contradictionTree.left
-        val right = contradictionTree.right
-        val negatedLeft = WffParser.parse(RuleGenerators.fNeg(RuleGenerators.treeToFormula(left)))
-
-        if (negatedLeft != right) {
-            return ValidationResult(false, "Line ${justification.contradictionLine} is not a valid contradiction (P and ¬P).", currentLineNumber)
-        }
-
-        // 3. Check that the final conclusion is the negation of the assumption
-        val assumptionTree = WffParser.parse(assumptionLine.formula)
-        val negatedAssumption = WffParser.parse(RuleGenerators.fNeg(assumptionLine.formula))
-
-        if (conclusionTree != negatedAssumption) {
-            return ValidationResult(false, "Conclusion must be the negation of the assumption on line ${justification.subproofStart}.", currentLineNumber)
-        }
-
-        return ValidationResult(true)
-    }
-
-    private fun validateReiteration(
-        currentTree: FormulaNode,
-        justification: Justification.Reiteration,
-        fullProof: Proof,
-        currentLineNumber: Int,
-        currentDepth: Int
-    ): ValidationResult {
-        // Does the referenced line exist?
-        val referencedLine = fullProof.lines.find { it.lineNumber == justification.lineReference }
-            ?: return ValidationResult(false, "Line $currentLineNumber: Reiteration references non-existent line ${justification.lineReference}.")
-
-        // Check 1: The formulas must match.
-        val referencedTree = WffParser.parse(referencedLine.formula)
-        if (currentTree != referencedTree) {
-            return ValidationResult(false, "Line $currentLineNumber: Formula does not match the formula on line ${justification.lineReference}.")
-        }
-
-        // Check 2: The referenced line must be in an accessible scope.
-        // Its depth must be less than or equal to the current line's depth.
-        if (referencedLine.depth > currentDepth) {
-            return ValidationResult(false, "Line $currentLineNumber: Cannot reiterate line ${justification.lineReference} from within a closed sub-proof.")
-        }
-
-        return ValidationResult(true)
-    }
-
-    /**
-     * Validates a line derived by a rule of inference using syntax trees.
-     */
-    private fun validateInference(
-        conclusionTree: FormulaNode,
-        justification: Justification.Inference,
-        provenTrees: Map<Int, FormulaNode>,
-        currentLineNumber: Int
-    ): ValidationResult {
-        val refNodes = justification.lineReferences.map { refNum ->
-            provenTrees[refNum] ?: return ValidationResult(false, "Line references non-existent line $refNum.")
-        }
-
-        // Check if all referenced lines were found
-        if (refNodes.size != justification.lineReferences.size) {
-            return ValidationResult(false, "One or more reference lines could not be found.")
-        }
-
-        return when (justification.rule) {
-            InferenceRule.MODUS_PONENS -> validateModusPonens(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.MODUS_TOLLENS -> validateModusTollens(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.HYPOTHETICAL_SYLLOGISM -> validateHypotheticalSyllogism(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.DISJUNCTIVE_SYLLOGISM -> validateDisjunctiveSyllogism(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.CONSTRUCTIVE_DILEMMA -> validateConstructiveDilemma(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.ABSORPTION -> validateAbsorption(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.SIMPLIFICATION -> validateSimplification(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.CONJUNCTION -> validateConjunction(conclusionTree, refNodes, currentLineNumber)
-            InferenceRule.ADDITION -> validateAddition(conclusionTree, refNodes, currentLineNumber)
-            else -> ValidationResult(false, "Validation for ${justification.rule.ruleName} not implemented.")
-        }
     }
 
     /**
@@ -169,313 +121,200 @@ object ProofValidator {
         conclusionTree: FormulaNode,
         justification: Justification.Replacement,
         provenTrees: Map<Int, FormulaNode>,
-        currentLineNumber: Int
+        inScopeLines: Set<Int>
     ): ValidationResult {
-        // 1. Get the premise tree from the referenced line.
-        val premiseTree = provenTrees[justification.lineReference]
-            ?: return ValidationResult(false, "Line ${justification.lineReference} referenced in replacement does not exist or is invalid.")
+        // --- Scope Check ---
+        if (justification.lineReference !in inScopeLines)
+            return ValidationResult(
+                false,
+                "Reference line ${justification.lineReference} is out of scope."
+            )
 
-        // 2. Generate all possible valid transformations from the premise tree.
-        val possibleResults = RuleReplacer.apply(justification.rule, premiseTree)
+        val premiseNode = provenTrees[justification.lineReference]
+                          ?: return ValidationResult(
+                              false,
+                              "Reference line ${justification.lineReference} not found."
+                          )
 
-        // 3. Check if the conclusion tree is one of the valid possibilities.
-        // Since FormulaNode is a data class, the '==' check compares the structure of the trees.
-        return if (conclusionTree in possibleResults) {
-            ValidationResult(true)
-        } else {
-            ValidationResult(false, "Line ${currentLineNumber} does not follow from line ${justification.lineReference} by ${justification.rule.ruleName}.")
-        }
+        val possibleOutcomes = RuleReplacer.apply(justification.rule, premiseNode)
+
+        return if (conclusionTree in possibleOutcomes) ValidationResult(true)
+        else ValidationResult(
+            false,
+            "Conclusion does not follow by ${justification.rule.ruleName}."
+        )
     }
 
+    /**
+     * Validate Implication Introduction:  This closes a sub-proof and introduces a new
+     * implication with the antecedents being the assumptions of the sub-proof and the
+     * consequent being the last line of the sub-proof.
+     */
     private fun validateImplicationIntroduction(
         conclusionTree: FormulaNode,
         justification: Justification.ImplicationIntroduction,
-        fullProof: Proof, // We need the full proof to check the sub-proof lines
-        currentLineNumber: Int
+        fullProof: Proof,
+        currentLine: ProofLine
     ): ValidationResult {
-
-        // 1. Check that the conclusion is actually an implication (P → Q)
+        if (currentLine.depth != fullProof.lines.getOrNull(justification.subproofStart - 2)?.depth ?: 0) {
+            val msg =
+                "Implication Introduction must end the sub-proof at the correct indentation level."
+            return ValidationResult(false, msg)
+        }
         if (conclusionTree !is FormulaNode.BinaryOpNode || conclusionTree.operator != implies) {
-            return ValidationResult(false, "Line $currentLineNumber: Implication Introduction must result in an implication.")
+            val msg = "Implication Introduction must result in an implication."
+            return ValidationResult(false, msg)
         }
 
-        // 2. Get the assumption and the final line from the sub-proof
         val assumptionLine = fullProof.lines.getOrNull(justification.subproofStart - 1)
-        val subproofConclusionLine = fullProof.lines.getOrNull(justification.subproofEnd - 1)
+        val subproofConclusionLine =
+            fullProof.lines.getOrNull(justification.subproofEnd - 1)
 
         if (assumptionLine == null || subproofConclusionLine == null) {
-            return ValidationResult(false, "Line $currentLineNumber: Sub-proof lines ${justification.subproofStart}-${justification.subproofEnd} are invalid.")
+            return ValidationResult(
+                false,
+                "Sub-proof lines are invalid."
+            )
+        }
+        if (assumptionLine.justification !is Justification.Assumption) {
+            val msg = "Sub-proof for II must start with an Assumption."
+            return ValidationResult(false, msg)
         }
 
-        // 3. Check if the assumption matches the antecedent (P) of the conclusion
         val assumptionTree = WffParser.parse(assumptionLine.formula)
-        if (assumptionTree != conclusionTree.left) {
-            return ValidationResult(false, "Line $currentLineNumber: The antecedent does not match the assumption on line ${justification.subproofStart}.")
-        }
-
-        // 4. Check if the sub-proof's result matches the consequent (Q) of the conclusion
         val subproofConclusionTree = WffParser.parse(subproofConclusionLine.formula)
-        if (subproofConclusionTree != conclusionTree.right) {
-            return ValidationResult(false, "Line $currentLineNumber: The consequent does not match the conclusion of the sub-proof on line ${justification.subproofEnd}.")
-        }
 
-        // (A more advanced validator would also re-validate the lines inside the sub-proof here,
-        // ensuring they respect scoping rules, but for now, this checks the main structure.)
+        if (assumptionTree != conclusionTree.left) {
+            val msg =
+                "The antecedent does not match the assumption on line ${justification.subproofStart}."
+            return ValidationResult(false, msg)
+        }
+        if (subproofConclusionTree != conclusionTree.right) {
+            val msg =
+                "The consequent does not match the conclusion of the sub-proof on line ${justification.subproofEnd}."
+            return ValidationResult(false, msg)
+        }
 
         return ValidationResult(true)
     }
 
     /**
-     * Validates Modus Ponens: (P → Q), P |- Q
+     * Validates a sub-proof by RAA.
      */
-    private fun validateModusPonens(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        // The ?.let {...} executes the lambda only if the value is not null.
-        validateRefs(refs, lineNum, 2, "Modus Ponens") ?.let { return it }
-        val p1 = checkMP(implication = refs[0], antecedent = refs[1], conclusion = conclusionTree)
-        val p2 = checkMP(implication = refs[1], antecedent = refs[0], conclusion = conclusionTree)
-        return if (p1 || p2) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Modus Ponens.")
-    }
-
-    private fun checkMP(implication: FormulaNode, antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        // The implication must be a BinaryOpNode with the '→' operator.
-        if (implication !is FormulaNode.BinaryOpNode || implication.operator != implies) return false
-        // The left side of the implication must match the antecedent.
-        // The right side of the implication must match the conclusion.
-        return implication.left == antecedent && implication.right == conclusion
-    }
-
-    /**
-     * Validates Modus Tollens: (P → Q), ¬Q |- ¬P
-     */
-    private fun validateModusTollens(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 2, "Modus Tollens") ?.let { return it }
-        val p1 = checkMT(implication = refs[0], negatedConsequent = refs[1], conclusion = conclusionTree)
-        val p2 = checkMT(implication = refs[1], negatedConsequent = refs[0], conclusion = conclusionTree)
-        return if (p1 || p2) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Modus Tollens.")
-    }
-
-    private fun checkMT(implication: FormulaNode, negatedConsequent: FormulaNode, conclusion: FormulaNode): Boolean {
-        // The implication must be (P → Q).
-        if (implication !is FormulaNode.BinaryOpNode || implication.operator != implies) return false
-        // The negated consequent must be (¬Q).
-        if (negatedConsequent !is FormulaNode.UnaryOpNode || negatedConsequent.operator != not) return false
-        // The conclusion must be (¬P).
-        if (conclusion !is FormulaNode.UnaryOpNode || conclusion.operator != not) return false
-
-        // Check if the inner part of the negated consequent matches the right side of the implication (Q).
-        val qMatches = negatedConsequent.child == implication.right
-        // Check if the inner part of the conclusion matches the left side of the implication (P).
-        val pMatches = conclusion.child == implication.left
-
-        return qMatches && pMatches
-    }
-
-    /**
-     * Validate Hypothetical Syllogism: (P → Q), (Q → R) |- P → R
-     */
-    private fun validateHypotheticalSyllogism(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 2, "Hypothetical Syllogism") ?.let { return it }
-        val p1 = checkHS(f1 = refs[0], f2 = refs[1], conclusion = conclusionTree)
-        val p2 = checkHS(f1 = refs[1], f2 = refs[0], conclusion = conclusionTree)
-        return if (p1 || p2) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Hypothetical Syllogism.")
-    }
-
-    private fun checkHS(f1: FormulaNode, f2: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (f1 !is FormulaNode.BinaryOpNode || f1.operator != implies) return false
-        if (f2 !is FormulaNode.BinaryOpNode || f2.operator != implies) return false
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator != implies) return false
-        if (f1.right != f2.left) return false
-        if (conclusion.left != f1.left) return false
-        return conclusion.right == f2.right
-    }
-
-    /**
-     * Validate Disjunctive Syllogism: (P ∨ Q), ¬P |- Q
-     */
-    private fun validateDisjunctiveSyllogism(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 2, "Disjunctive Syllogism") ?.let { return it }
-        val p1 = checkDS(disjunction = refs[0], negation = refs[1], conclusion = conclusionTree)
-        val p2 = checkDS(disjunction = refs[1], negation = refs[0], conclusion = conclusionTree)
-        return if (p1 || p2) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Disjunctive Syllogism.")
-    }
-
-    private fun checkDS(disjunction: FormulaNode, negation: FormulaNode, conclusion: FormulaNode): Boolean {
-        // 1. Make sure the premises have the right structure.
-        if (disjunction !is FormulaNode.BinaryOpNode || disjunction.operator != or) return false
-        if (negation !is FormulaNode.UnaryOpNode || negation.operator != not) return false
-
-        // 2. Get the parts of the formulas.
-        val p = disjunction.left
-        val q = disjunction.right
-        val negatedPart = negation.child
-
-        // 3. Check both forms of the syllogism:
-        // Form A: The negated part matches P, so the conclusion must be Q.
-        val formA = (negatedPart == p && conclusion == q)
-
-        // Form B: The negated part matches Q, so the conclusion must be P.
-        val formB = (negatedPart == q && conclusion == p)
-
-        // If either form is valid, the rule holds.
-        return formA || formB
-    }
-
-    /**
-     * Validate Constructive Dilemma: (P → Q) ∧ (R → S), P ∨ R |- (Q ∨ S)
-     */
-    private fun validateConstructiveDilemma(
+    private fun validateReductioAdAbsurdum(
         conclusionTree: FormulaNode,
-        refNodes: List<FormulaNode>,
-        currentLineNumber: Int
+        justification: Justification.ReductioAdAbsurdum,
+        fullProof: Proof,
+        currentLine: ProofLine
     ): ValidationResult {
-        if (refNodes.size < 2) {
-            return ValidationResult(false, "Constructive Dilemma requires at least 2 reference lines.")
+        if (currentLine.depth != fullProof.lines.getOrNull(justification.subproofStart - 2)?.depth ?: 0) {
+            val msg = "RAA must end the sub-proof at the correct indentation level."
+            return ValidationResult(false, msg)
+        }
+        val assumptionLine = fullProof.lines.getOrNull(justification.subproofStart - 1)
+                             ?: return ValidationResult(
+                                 false,
+                                 "Sub-proof start line not found."
+                             )
+        val contradictionLine =
+            fullProof.lines.getOrNull(justification.contradictionLine - 1)
+            ?: return ValidationResult(false, "Contradiction line not found.")
+
+        if (assumptionLine.justification !is Justification.Assumption) {
+            val msg = "Sub-proof for RAA must start with an Assumption."
+            return ValidationResult(false, msg)
         }
 
-        // 1. Deconstruct the reference nodes into their logical components
-        val standaloneImplications = refNodes.filterIsInstance<FormulaNode.BinaryOpNode>()
-            .filter { it.operator == implies }
+        val assumptionTree = WffParser.parse(assumptionLine.formula)
+        val contradictionTree = WffParser.parse(contradictionLine.formula)
 
-        var disjunctionOfAntecedents: FormulaNode.BinaryOpNode? = null
-        val extraImplications = mutableListOf<FormulaNode.BinaryOpNode>()
+        val expectedConclusion = FormulaNode.UnaryOpNode(not, assumptionTree!!)
 
-        refNodes.forEach { node ->
-            if (node is FormulaNode.BinaryOpNode && node.operator == or) {
-                if (node.left is FormulaNode.BinaryOpNode && node.left.operator == implies &&
-                    node.right is FormulaNode.BinaryOpNode && node.right.operator == implies) {
-                    extraImplications.add(node.left as FormulaNode.BinaryOpNode)
-                    extraImplications.add(node.right as FormulaNode.BinaryOpNode)
-                } else {
-                    // TODO: This may need to be hoisted out (not part of the else)
-                    disjunctionOfAntecedents = node
-                }
-            } else if (node is FormulaNode.BinaryOpNode && node.operator == and) {
-                if (node.left is FormulaNode.BinaryOpNode && node.left.operator == implies &&
-                    node.right is FormulaNode.BinaryOpNode && node.right.operator == implies) {
-                    extraImplications.add(node.left as FormulaNode.BinaryOpNode)
-                    extraImplications.add(node.right as FormulaNode.BinaryOpNode)
-                }
+        if (conclusionTree != expectedConclusion) {
+            val errorMessage = "Conclusion must be the negation of the assumption."
+            return ValidationResult(false, errorMessage)
+        }
+
+        if (contradictionTree !is FormulaNode.BinaryOpNode || contradictionTree.operator != and ||
+            WffParser.parse(RuleGenerators.fNeg(treeToFormula(contradictionTree.left))) != contradictionTree.right
+        ) {
+
+            val errorMessage =
+                "Line ${justification.contradictionLine} is not a valid contradiction of the form (P & ~P)."
+            return ValidationResult(false, errorMessage)
+        }
+        return ValidationResult(true)
+    }
+
+    /**
+     * Validates a (sub-proof) line derived by reiteration
+     */
+    private fun validateReiteration(
+        conclusionTree: FormulaNode,
+        justification: Justification.Reiteration,
+        fullProof: Proof,
+        inScopeLines: Set<Int>
+    ): ValidationResult {
+        if (justification.lineReference !in inScopeLines) {
+            val errorMessage =
+                "Cannot reiterate line ${justification.lineReference} as it is out of scope."
+            return ValidationResult(false, errorMessage)
+        }
+
+        val referencedLine = fullProof.lines.getOrNull(justification.lineReference - 1)
+                             ?: return ValidationResult(
+                                 false,
+                                 "Referenced line for reiteration not found."
+                             )
+
+        val referencedTree = WffParser.parse(referencedLine.formula)
+
+        return if (conclusionTree == referencedTree) {
+            ValidationResult(true)
+        } else {
+            val errorMessage =
+                "Reiterated formula does not match the formula on line ${justification.lineReference}."
+            ValidationResult(false, errorMessage)
+        }
+    }
+
+    /**
+     * Validates a line derived by a rule of inference
+     */
+    private fun validateInference(
+        conclusionTree: FormulaNode,
+        justification: Justification.Inference,
+        provenTrees: Map<Int, FormulaNode>,
+        inScopeLines: Set<Int>,
+        lineNumber: Int
+    ): ValidationResult {
+        // --- Scope Check (unchanged) ---
+        justification.lineReferences.forEach {
+            if (it !in inScopeLines) {
+                val errorMessage = "Reference line $it is out of scope."
+                return ValidationResult(false, errorMessage)
             }
         }
 
-        val allImplications = (standaloneImplications + extraImplications).distinct()
+        // --- KEY CHANGE: All logic is now deferred to the central engine ---
+        val refFormulas =
+            justification.lineReferences
+                .mapNotNull { provenTrees[it] }
+                .map { treeToFormula(it) }
+                .toSet()
+        val conclusionFormula = treeToFormula(conclusionTree)
 
-        if (allImplications.size < 2 || disjunctionOfAntecedents == null) {
-            return ValidationResult(false, "The premises do not have the required structure for Constructive Dilemma.")
+        return if (InferenceRuleEngine.isValidInference(
+                justification.rule,
+                refFormulas,
+                conclusionFormula
+            )
+        ) {
+            ValidationResult(true)
+        } else {
+            val errorMessage =
+                "Line ${lineNumber} does not follow from the premises by ${justification.rule.ruleName}."
+            ValidationResult(false, errorMessage)
         }
-
-        // 2. Iterate through pairs of implications to find a match
-        for (i in allImplications.indices) {
-            for (j in i + 1 until allImplications.size) {
-                val imp1 = allImplications[i] // P -> Q
-                val imp2 = allImplications[j] // R -> S
-
-                val pNode = imp1.left
-                val rNode = imp2.left
-
-                // 3. Check if the disjunction matches the antecedents
-                val disjP = disjunctionOfAntecedents!!.left
-                val disjR = disjunctionOfAntecedents!!.right
-                val antecedentsMatch = (pNode == disjP && rNode == disjR) ||
-                                       (pNode == disjR && rNode == disjP)
-
-                if (antecedentsMatch) {
-                    // 4. If it matches, construct the expected conclusion and check it
-                    val qNode = imp1.right
-                    val sNode = imp2.right
-                    val expectedConclusionNodes = listOf(
-                        fOr(treeToFormula(qNode), treeToFormula(sNode)),
-                        fOr(treeToFormula(sNode), treeToFormula(qNode))
-                    ).map { WffParser.parse(it) }
-
-                    if (conclusionTree in expectedConclusionNodes) {
-                        return ValidationResult(true)
-                    }
-                }
-            }
-        }
-
-        // If no valid derivation was found after checking all pairs
-        return ValidationResult(false, "The conclusion does not follow from the premises by Constructive Dilemma.")
-    }
-
-    /**
-     * Validate Absorption: (P → Q) |- P → (P ∧ Q)
-     */
-    private fun validateAbsorption(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 1, "Absorption") ?.let { return it }
-        val res = checkAbsorption(antecedent = refs[0], conclusion = conclusionTree)
-        return if (res) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Absorption.")
-    }
-
-    private fun checkAbsorption(antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (antecedent !is FormulaNode.BinaryOpNode || antecedent.operator != implies) return false
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator != implies) return false
-        if (conclusion.left != antecedent.left) return false
-        if (conclusion.right !is FormulaNode.BinaryOpNode || conclusion.right.operator != and) return false
-        val concConj = conclusion.right
-        val conjLeft = concConj.left
-        val conjRight = concConj.right
-        if (conjLeft == conjRight) return false
-        val psMatch = antecedent.left == conclusion.left && (conjLeft == antecedent.left || conjLeft == antecedent.right)
-        return psMatch && (antecedent.right == conjRight || antecedent.right == conjLeft)
-    }
-
-    /**
-     * Validate Simplification: (P ∧ Q) |- P
-     */
-    private fun validateSimplification(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 1, "Simplification") ?.let { return it }
-        val res = checkSimp(antecedent = refs[0], conclusion = conclusionTree)
-        return if (res) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Simplification.")
-    }
-
-    private fun checkSimp(antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (antecedent !is FormulaNode.BinaryOpNode || antecedent.operator != and) return false
-        return antecedent.left == conclusion || antecedent.right == conclusion
-    }
-
-    /**
-     * Validate Conjunction: P, Q |- P ∧ Q
-     */
-    private fun validateConjunction(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 2, "Conjunction") ?.let { return it }
-        val p1 = checkConj(f1 = refs[0], f2 = refs[1], conclusion = conclusionTree)
-        return if (p1) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Conjunction.")
-    }
-
-    private fun checkConj(f1: FormulaNode, f2: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator != and) return false
-        return (conclusion.left == f1 && conclusion.right == f2) ||
-                (conclusion.left == f2 && conclusion.right == f1)
-    }
-
-    /**
-     * Validate Addition: P |- P ∨ Q
-     */
-    private fun validateAddition(conclusionTree: FormulaNode, refs: List<FormulaNode>, lineNum: Int): ValidationResult {
-        validateRefs(refs, lineNum, 1, "Addition") ?.let { return it }
-        val res = checkAdd(antecedent = refs[0], conclusion = conclusionTree)
-        return if (res) ValidationResult(true)
-               else ValidationResult(false, "Line $lineNum: Does not follow by Addition.")
-    }
-
-    private fun checkAdd(antecedent: FormulaNode, conclusion: FormulaNode): Boolean {
-        if (conclusion !is FormulaNode.BinaryOpNode || conclusion.operator != or) return false
-        return antecedent == conclusion.left || antecedent == conclusion.right
-    }
-
-    private fun validateRefs(refs: List<FormulaNode>, lineNum: Int, refCount: Int, ruleName: String): ValidationResult? {
-        if (refs.size != refCount)
-            return ValidationResult(false,
-                                    "Line $lineNum: $ruleName requires $refCount reference line(s).")
-        return null
     }
 }

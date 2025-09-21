@@ -98,28 +98,28 @@ object AvailableTiles {
  * @property abbreviation The standard abbreviation for the rule.
  */
 enum class InferenceRule(val ruleName: String, val abbreviation: String) {
+    ABSORPTION("Absorption", "Abs"),
+    ADDITION("Addition", "Add"),
+    CONJUNCTION("Conjunction", "Conj"),
+    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
+    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
+    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
     MODUS_PONENS("Modus Ponens", "MP"),
     MODUS_TOLLENS("Modus Tollens", "MT"),
-    HYPOTHETICAL_SYLLOGISM("Hypothetical Syllogism", "HS"),
-    DISJUNCTIVE_SYLLOGISM("Disjunctive Syllogism", "DS"),
-    CONSTRUCTIVE_DILEMMA("Constructive Dilemma", "CD"),
-    ABSORPTION("Absorption", "Abs"),
     SIMPLIFICATION("Simplification", "Simp"),
-    CONJUNCTION("Conjunction", "Conj"),
-    ADDITION("Addition", "Add")
 }
 
 enum class ReplacementRule(val ruleName: String, val abbreviation: String) {
-    DEMORGANS_THEOREM("De Morgan's Theorem", "DM"),
-    COMMUTATION("Commutation", "Comm"),
     ASSOCIATION("Association", "Assoc"),
+    COMMUTATION("Commutation", "Comm"),
+    DEMORGANS_THEOREM("De Morgan's Theorem", "DM"),
     DISTRIBUTION("Distribution", "Dist"),
     DOUBLE_NEGATION("Double Negation", "DN"),
-    TRANSPOSITION("Transposition", "Trans"),
-    MATERIAL_IMPLICATION("Material Implication", "MI"),
-    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
     EXPORTATION("Exporation", "Exp"),
-    TAUTOLOGY("Tautology", "Tau")
+    MATERIAL_EQUIVALENCE("Material Equivalence", "ME"),
+    MATERIAL_IMPLICATION("Material Implication", "MI"),
+    TAUTOLOGY("Tautology", "Tau"),
+    TRANSPOSITION("Transposition", "Trans"),
 }
 
 /**
