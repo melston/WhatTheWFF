@@ -4,6 +4,7 @@
 
 package com.elsoft.whatthewff.logic
 
+import androidx.compose.foundation.layout.add
 import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
 import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
 import com.elsoft.whatthewff.logic.RuleGenerators.fOr
@@ -47,18 +48,22 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveAbsorption(premises: Set<Formula>): List<Formula> {
-        val implications = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.implies
-        }
         val conclusions = mutableListOf<Formula>()
-        for (imp in implications) {
-            val node = WffParser.parse(imp)
-            val antecedent = treeToFormula((node as FormulaNode.BinaryOpNode).left)
-            val consequent = treeToFormula((node as FormulaNode.BinaryOpNode).right)
-            conclusions.add(fImplies(antecedent,fAnd(antecedent, consequent)))
-        }
+
+        premises
+            .mapNotNull { formula ->
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                    node
+                } else {
+                    null
+                }
+            }
+            .forEach { node ->
+                val antecedent = treeToFormula(node.left)
+                val consequent = treeToFormula(node.right)
+                conclusions.add(fImplies(antecedent, fAnd(antecedent, consequent)))
+            }
         return conclusions.distinct()
     }
 
@@ -112,33 +117,36 @@ object InferenceRuleEngine {
      * construct a new disjunction with the consequents of both implications.
      */
     private fun deriveConstructiveDilemma(premises: Set<Formula>): List<Formula> {
-        val disjunctions = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.and
-            (node as FormulaNode.BinaryOpNode).left is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).right is FormulaNode.BinaryOpNode &&
-            (((node as FormulaNode.BinaryOpNode).left) as FormulaNode.BinaryOpNode).operator == AvailableTiles.implies &&
-            (((node as FormulaNode.BinaryOpNode).right) as FormulaNode.BinaryOpNode).operator == AvailableTiles.implies
-        }
-
         val conclusions = mutableListOf<Formula>()
 
-        for (disjunction in disjunctions) {
-            val node = WffParser.parse(disjunction) as FormulaNode.BinaryOpNode
-            val leftImpl = (node as FormulaNode.BinaryOpNode).left as FormulaNode.BinaryOpNode
-            val rightImpl = (node as FormulaNode.BinaryOpNode).right as FormulaNode.BinaryOpNode
-            val leftAntecedent = treeToFormula((leftImpl as FormulaNode.BinaryOpNode).left)
-            val rightAntecedent = treeToFormula((rightImpl as FormulaNode.BinaryOpNode).left)
-            val leftConsequent = treeToFormula((leftImpl as FormulaNode.BinaryOpNode).right)
-            val rightConsequent = treeToFormula((rightImpl as FormulaNode.BinaryOpNode).right)
-            if (premises.contains(fOr(leftAntecedent, rightAntecedent)) ||
-                premises.contains(fOr(rightAntecedent, leftAntecedent))) {
-
-                conclusions.add(fOr(leftConsequent, rightConsequent))
-                conclusions.add(fOr(rightConsequent, leftConsequent))
+        premises
+            .mapNotNull { formula ->
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and) {
+                    var leftNode = node.left
+                    var rightNode = node.right
+                    if (leftNode is FormulaNode.BinaryOpNode && leftNode.operator == AvailableTiles.implies &&
+                        rightNode is FormulaNode.BinaryOpNode && rightNode.operator == AvailableTiles.implies) {
+                        leftNode to rightNode
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
             }
-        }
+            .forEach { (leftNode, rightNode) ->
+                val leftAntecedent = treeToFormula(leftNode.left)
+                val rightAntecedent = treeToFormula(rightNode.left)
+                val leftConsequent = treeToFormula(leftNode.right)
+                val rightConsequent = treeToFormula(rightNode.right)
+                if (premises.contains(fOr(leftAntecedent, rightAntecedent)) ||
+                    premises.contains(fOr(rightAntecedent, leftAntecedent))) {
+                    conclusions.add(fOr(leftConsequent, rightConsequent))
+                    conclusions.add(fOr(rightConsequent, leftConsequent))
+                }
+
+            }
         return conclusions.distinct()
     }
 
@@ -152,23 +160,26 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveDisjunctiveSyllogism(premises: Set<Formula>): List<Formula> {
-        val disjunctions = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.or
-        }
         val conclusions = mutableListOf<Formula>()
-        for (disjunction in disjunctions) {
-            val disNode = WffParser.parse(disjunction) as FormulaNode.BinaryOpNode
-            val disjunct1 = disNode.left
-            val disjunct2 = disNode.right
-            if (premises.contains(fNeg(treeToFormula(disjunct1)))) {
-                conclusions.add(treeToFormula(disjunct2))
+        premises
+            .mapNotNull { formula ->
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.or) {
+                    node
+                } else {
+                    null
+                }
             }
-            if (premises.contains(fNeg(treeToFormula(disjunct2)))) {
-                conclusions.add(treeToFormula(disjunct1))
+            .forEach { node ->
+                val disjunct1 = node.left
+                val disjunct2 = node.right
+                if (premises.contains(fNeg(treeToFormula(disjunct1)))) {
+                    conclusions.add(treeToFormula(disjunct2))
+                }
+                if (premises.contains(fNeg(treeToFormula(disjunct2)))) {
+                    conclusions.add(treeToFormula(disjunct1))
+                }
             }
-        }
         return conclusions.distinct()
     }
 
@@ -182,20 +193,40 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.    */
     private fun deriveHypotheticalSyllogism(premises: Set<Formula>): List<Formula> {
-        val implications = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.implies }
         val conclusions = mutableListOf<Formula>()
+        val implications = premises
+            .mapNotNull { formula ->
+                // Try to parse, return null if not a BinaryOpNode or not an implication
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                    // Keep the original formula along with its parsed node for easier access
+                    // Kotlin knows that node is a BinaryOpNode so the type of the pair is
+                    // Pair<Formula, FormulaNode.BinaryOpNode>
+                    formula to node
+                } else {
+                    // In this case, mapNotNull will filter out the result automatically
+                    null
+                }
+            }
         if (implications.size < 2) return conclusions
 
-        for (imp1 in implications) {
-            for (imp2 in implications) {
-                if (imp1 == imp2) continue
-                val node1 = WffParser.parse(imp1) as FormulaNode.BinaryOpNode
-                val node2 = WffParser.parse(imp2) as FormulaNode.BinaryOpNode
+        // implications now has a list of pairs of formulas and their parsed nodes
+        for (i in implications.indices) {
+            for (j in (i + 1) until implications.size) { // Ensures each pair is visited once
+                val (_, node1) = implications[i] // Destructuring for node1
+                val (_, node2) = implications[j] // Destructuring for node2
+
+                // Check A->B, B->C
                 if (node1.right == node2.left) {
-                    conclusions.add(fImplies(treeToFormula(node1.left), treeToFormula(node2.right)))
+                    conclusions.add(
+                        fImplies(treeToFormula(node1.left),
+                                 treeToFormula(node2.right)))
+                }
+                // Check B->C, A->B (if order matters for the input implications, or if they are different implications)
+                if (node2.right == node1.left) {
+                    conclusions.add(
+                        fImplies(treeToFormula(node2.left),
+                                 treeToFormula(node1.right)))
                 }
             }
         }
@@ -211,18 +242,23 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveModusPonens(premises: Set<Formula>): List<Formula> {
-        val implications = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.implies }
         val conclusions = mutableListOf<Formula>()
-        for (imp in implications) {
-            val node = WffParser.parse(imp) as FormulaNode.BinaryOpNode
-            val antecedent = treeToFormula((node as FormulaNode.BinaryOpNode).left)
-            if (premises.contains(antecedent)) {
-                conclusions.add(treeToFormula((node as FormulaNode.BinaryOpNode).right))
+        premises
+            .mapNotNull { formula ->
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                    node
+                } else {
+                    null
+                }
             }
-        }
+            .forEach { node ->
+                val antecedent = treeToFormula(node.left)
+                val consequent = treeToFormula(node.right)
+                if (premises.contains(antecedent)) {
+                    conclusions.add(consequent)
+                }
+            }
         return conclusions.distinct()
     }
 
@@ -236,19 +272,23 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveModusTollens(premises: Set<Formula>): List<Formula> {
-        val implications = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.implies }
         val conclusions = mutableListOf<Formula>()
-        for (imp in implications) {
-            val node = WffParser.parse(imp) as FormulaNode.BinaryOpNode
-            val consequent = treeToFormula((node as FormulaNode.BinaryOpNode).right)
-            val negConsequent = fNeg(consequent)
-            if (premises.contains(negConsequent)) {
-                conclusions.add(fNeg(treeToFormula((node as FormulaNode.BinaryOpNode).left)))
+        premises
+            .mapNotNull { formula ->
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                    node
+                } else {
+                    null
+                }
             }
-        }
+            .forEach { node ->
+                val consequent = treeToFormula(node.right)
+                val negConsequent = fNeg(consequent)
+                if (premises.contains(negConsequent)) {
+                    conclusions.add(fNeg(treeToFormula(node.left)))
+                }
+            }
         return conclusions.distinct()
     }
 
@@ -261,21 +301,22 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveSimplification(premises: Set<Formula>): List<Formula> {
-        val allConjunctions = premises.filter {
-            val node = WffParser.parse(it)
-            node is FormulaNode.BinaryOpNode &&
-            (node as FormulaNode.BinaryOpNode).operator == AvailableTiles.and
-        }
-
         val conclusions = mutableListOf<Formula>()
-
-        for (conjunction in allConjunctions) {
-            val node = WffParser.parse(conjunction) as FormulaNode.BinaryOpNode
-            val left = treeToFormula((node as FormulaNode.BinaryOpNode).left)
-            val right = treeToFormula((node as FormulaNode.BinaryOpNode).right)
-            conclusions.add(left)
-            conclusions.add(right)
-        }
+        premises
+            .mapNotNull { formula ->
+                val node = WffParser.parse(formula)
+                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and) {
+                    node
+                } else {
+                    null
+                }
+            }
+            .forEach { node ->
+                val left = treeToFormula(node.left)
+                val right = treeToFormula(node.right)
+                conclusions.add(left)
+                conclusions.add(right)
+            }
         return conclusions.distinct()
     }
 }

@@ -100,7 +100,8 @@ object RuleGenerators {
 
         build(node, 0, false)
         return Formula(tiles)
-    }}
+    }
+}
 
 object ForwardRuleGenerators {
     val implicationIntroduction = ForwardRule(
