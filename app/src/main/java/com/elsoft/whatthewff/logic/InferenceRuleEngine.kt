@@ -4,11 +4,10 @@
 
 package com.elsoft.whatthewff.logic
 
-import androidx.compose.foundation.layout.add
+import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
 import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
 import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
 import com.elsoft.whatthewff.logic.RuleGenerators.fOr
-import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
 import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
 object InferenceRuleEngine {
@@ -32,7 +31,13 @@ object InferenceRuleEngine {
     // --- Public-facing function for the Validator ---
     fun isValidInference(rule: InferenceRule, premises: Set<Formula>, conclusion: Formula): Boolean {
         // A simple way to validate is to see if the conclusion is in the list of possible derivations.
-        return conclusion in getPossibleConclusions(rule, premises)
+        val conclusionNode = WffParser.parse(conclusion)
+
+        // A simple way to validate is to see if the conclusion's logical structure
+        // is present in the list of possible derived structures.
+        return getPossibleConclusions(rule, premises)
+            .mapNotNull { WffParser.parse(it) }
+            .any { it == conclusionNode }
     }
 
     // --- Core Logic Implementations for each rule ---
@@ -97,13 +102,13 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveConjunction(premises: Set<Formula>): List<Formula> {
+        if (premises.size < 2) return emptyList()
         val conclusions = mutableListOf<Formula>()
-        for (p in premises) {
-            for (q in premises) {
-                if (p != q) {
-                    conclusions.add(fAnd(p, q))
-                    conclusions.add(fAnd(q, p))
-                }
+        val premiseList = premises.toList()
+        for (i in premiseList.indices) {
+            for (j in i + 1 until premiseList.size) {
+                conclusions.add(fAnd(premiseList[i], premiseList[j]))
+                conclusions.add(fAnd(premiseList[j], premiseList[i]))
             }
         }
         return conclusions.distinct()
@@ -119,34 +124,49 @@ object InferenceRuleEngine {
     private fun deriveConstructiveDilemma(premises: Set<Formula>): List<Formula> {
         val conclusions = mutableListOf<Formula>()
 
-        premises
-            .mapNotNull { formula ->
-                val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and) {
-                    var leftNode = node.left
-                    var rightNode = node.right
-                    if (leftNode is FormulaNode.BinaryOpNode && leftNode.operator == AvailableTiles.implies &&
-                        rightNode is FormulaNode.BinaryOpNode && rightNode.operator == AvailableTiles.implies) {
-                        leftNode to rightNode
-                    } else {
-                        null
-                    }
-                } else {
-                    null
+        // 1. Gather ALL available implications, both standalone and from conjunctions.
+        val allImplications = premises.flatMap { f ->
+            WffParser.parse(f)?.let { node ->
+                when {
+                    // Case A: Standalone implication (P -> Q)
+                    node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies ->
+                        listOf(node)
+                    // Case B: Conjunction of implications ((P->Q) & (R->S))
+                    node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and &&
+                    node.left is FormulaNode.BinaryOpNode &&
+                    node.left.operator == AvailableTiles.implies &&
+                    node.right is FormulaNode.BinaryOpNode &&
+                    node.right.operator == AvailableTiles.implies ->
+                        listOf(node.left, node.right)
+                    else -> emptyList()
                 }
-            }
-            .forEach { (leftNode, rightNode) ->
-                val leftAntecedent = treeToFormula(leftNode.left)
-                val rightAntecedent = treeToFormula(rightNode.left)
-                val leftConsequent = treeToFormula(leftNode.right)
-                val rightConsequent = treeToFormula(rightNode.right)
-                if (premises.contains(fOr(leftAntecedent, rightAntecedent)) ||
-                    premises.contains(fOr(rightAntecedent, leftAntecedent))) {
-                    conclusions.add(fOr(leftConsequent, rightConsequent))
-                    conclusions.add(fOr(rightConsequent, leftConsequent))
-                }
+            } ?: emptyList()
+        }.distinct()
 
+        // 2. Gather all available disjunctions.
+        val disjunctions = premises.mapNotNull { f ->
+            WffParser.parse(f)?.let { if (it is FormulaNode.BinaryOpNode && it.operator == AvailableTiles.or) it else null }
+        }
+
+        if (allImplications.size < 2 || disjunctions.isEmpty()) return emptyList()
+
+        // 3. Iterate through all pairs of implications and check against the disjunctions.
+        for (i in allImplications.indices) {
+            for (j in i + 1 until allImplications.size) {
+                val pNode = allImplications[i].left
+                val qNode = allImplications[i].right
+                val rNode = allImplications[j].left
+                val sNode = allImplications[j].right
+
+                // Construct the required disjunctive premise (P v R)
+                val requiredDisjNode = WffParser.parse(fOr(treeToFormula(pNode), treeToFormula(rNode)))
+
+                // Check if any of the provided disjunctions match
+                if (disjunctions.any { it == requiredDisjNode }) {
+                    conclusions.add(fOr(treeToFormula(qNode), treeToFormula(sNode)))
+                }
             }
+        }
         return conclusions.distinct()
     }
 
