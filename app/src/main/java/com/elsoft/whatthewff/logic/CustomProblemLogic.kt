@@ -4,12 +4,6 @@
 
 package com.elsoft.whatthewff.logic
 
-import com.elsoft.whatthewff.logic.AvailableTiles.and
-import com.elsoft.whatthewff.logic.AvailableTiles.iff
-import com.elsoft.whatthewff.logic.AvailableTiles.implies
-import com.elsoft.whatthewff.logic.AvailableTiles.not
-import com.elsoft.whatthewff.logic.AvailableTiles.or
-
 // --- Data Structures for Custom Problems ---
 
 /**
@@ -44,23 +38,6 @@ data class CustomProblem(
 object ProblemFileParser {
 
     private enum class ParseMode { NONE, PREMISES, GOAL }
-
-    /**
-     * Parses a formula string that may contain aliases like '&' or '->'.
-     */
-    private fun parseFormulaWithAliases(raw: String): Formula? {
-        // Replace aliases with the canonical symbols our main parser understands.
-        val canonical = raw
-            .replace("&", and.symbol)
-            .replace("|", or.symbol)
-            .replace("->", implies.symbol)
-            .replace("<->", iff.symbol)
-            .replace("iff", iff.symbol)
-            .replace("~", not.symbol)
-
-        // Use the existing helper to convert the string to a Formula object.
-        return WffParser.f(canonical)
-    }
 
     /**
      * Parses the entire content of a text file.
@@ -111,12 +88,12 @@ object ProblemFileParser {
             } else if (trimmedLine.isNotEmpty()) {
                 when (mode) {
                     ParseMode.PREMISES -> {
-                        parseFormulaWithAliases(trimmedLine)?.let {
+                        WffParser.parseFormulaFromString(trimmedLine)?.let {
                             currentPremises.add(it)
                         }
                     }
                     ParseMode.GOAL -> {
-                        currentGoal = parseFormulaWithAliases(trimmedLine)
+                        currentGoal = WffParser.parseFormulaFromString(trimmedLine)
                         mode = ParseMode.NONE // A goal is only one line
                     }
                     ParseMode.NONE -> { /* Ignore other text */ }

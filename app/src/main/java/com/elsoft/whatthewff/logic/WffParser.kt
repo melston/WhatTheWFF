@@ -8,6 +8,10 @@ import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.iff
 import com.elsoft.whatthewff.logic.AvailableTiles.or
 import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
+import com.elsoft.whatthewff.logic.AvailableTiles.not
+import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
+
 //import com.elsoft.whatthewff.logic.AvailableTiles.not
 
 /**
@@ -24,23 +28,6 @@ object WffParser {
     }
 
     /**
-     * A simple DSL/parser function that converts a readable string into a Formula object.
-     * This allows for clear and concise problem definitions.
-     * Example: f("(p→q)")
-     */
-    fun f(formulaString: String): Formula {
-        // Create a quick lookup map for mapping characters to their LogicTile objects.
-        val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
-
-        // Map each character in the string to its corresponding tile.
-        // If a character isn't a valid symbol (like whitespace), it's ignored.
-        val tiles = formulaString.mapNotNull { char ->
-            tileMap[char.toString()]
-        }
-        return Formula(tiles)
-    }
-
-    /**
      * Public entry point for parsing.
      */
     fun parse(formula: Formula): FormulaNode? {
@@ -49,6 +36,47 @@ object WffParser {
         val resultNode = parseImplication(state) // Start with the lowest precedence operator
         // A successful parse must consume all tiles.
         return if (state.hasMore()) null else resultNode
+    }
+
+    /**
+     * A robust public function to parse a string into a Formula object.
+     * This version correctly handles multi-character operators and common ASCII symbols.
+     */
+    fun parseFormulaFromString(formulaString: String): Formula {
+        val tokens = mutableListOf<LogicTile>()
+        var i = 0
+        while (i < formulaString.length) {
+            val char = formulaString[i]
+            when {
+                char.isWhitespace() -> { i++; continue }
+                char.isLetter() -> {
+                    tokens.add(LogicTile(char.toString(), SymbolType.VARIABLE))
+                    i++
+                }
+                char == '&' || char == '∧' -> { tokens.add(and); i++ }
+                char == '|' || char == '∨' -> { tokens.add(or); i++ }
+                char == '~' || char == '¬' -> { tokens.add(not); i++ }
+                char == '(' -> { tokens.add(leftParen); i++ }
+                char == ')' -> { tokens.add(rightParen); i++ }
+                formulaString.substring(i).startsWith("->") ||
+                formulaString.substring(i).startsWith("→") -> {
+                    tokens.add(implies)
+                    i += if (formulaString.substring(i).startsWith("->")) 2 else 1
+                }
+                formulaString.substring(i).startsWith("<->") ||
+                formulaString.substring(i).startsWith("iff") ||
+                formulaString.substring(i).startsWith("↔") -> {
+                    tokens.add(iff)
+                    i += when {
+                        formulaString.substring(i).startsWith("<->") -> 3
+                        formulaString.substring(i).startsWith("iff") -> 3
+                        else -> 1
+                    }
+                }
+                else -> i++
+            }
+        }
+        return Formula(tokens)
     }
 
     // The parser is broken into a hierarchy of functions, where each function

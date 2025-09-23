@@ -36,16 +36,16 @@ object ProblemSets {
         Problem(
             id = "1-1",
             name = "Simple Modus Ponens",
-            premises = listOf(WffParser.f("(p→q)"),
-                              WffParser.f("p")),
-            conclusion = WffParser.f("q"),
+            premises = listOf(WffParser.parseFormulaFromString("(p→q)"),
+                              WffParser.parseFormulaFromString("p")),
+            conclusion = WffParser.parseFormulaFromString("q"),
             difficulty = 1),
         Problem(
             id = "1-2",
             name = "Modus Ponens with Negation",
-            premises =  listOf(WffParser.f("(¬r→s)"),
-                               WffParser.f("¬r")),
-            conclusion = WffParser.f("s"),
+            premises =  listOf(WffParser.parseFormulaFromString("(¬r→s)"),
+                               WffParser.parseFormulaFromString("¬r")),
+            conclusion = WffParser.parseFormulaFromString("s"),
             difficulty = 2)
     )
 
@@ -53,17 +53,17 @@ object ProblemSets {
         Problem(
             id = "2-1",
             name = "Simple Modus Tollens",
-            premises = listOf(WffParser.f("(p→q)"),
-                              WffParser.f("q")),
-            conclusion = WffParser.f("p"),
+            premises = listOf(WffParser.parseFormulaFromString("(p→q)"),
+                              WffParser.parseFormulaFromString("q")),
+            conclusion = WffParser.parseFormulaFromString("p"),
             difficulty = 1
         ),
         Problem(
             id = "2-2",
             name = "Modus Tollens with Negation",
-            premises = listOf(WffParser.f("(p→q)"),
-                              WffParser.f("¬q")),
-            conclusion = WffParser.f("¬p"),
+            premises = listOf(WffParser.parseFormulaFromString("(p→q)"),
+                              WffParser.parseFormulaFromString("¬q")),
+            conclusion = WffParser.parseFormulaFromString("¬p"),
             difficulty = 2
         )
     )
@@ -73,10 +73,10 @@ object ProblemSets {
         Problem(
             id = "3-1",
             name = "Multi-Step Proof",
-            premises = listOf(WffParser.f("(p→q)"),
-                              WffParser.f("(q→r)"),
-                              WffParser.f("p")),
-            conclusion = WffParser.f("r"),
+            premises = listOf(WffParser.parseFormulaFromString("(p→q)"),
+                              WffParser.parseFormulaFromString("(q→r)"),
+                              WffParser.parseFormulaFromString("p")),
+            conclusion = WffParser.parseFormulaFromString("r"),
             difficulty = 3
         )
     )
@@ -97,7 +97,7 @@ object ProblemGenerator {
         val basePremises = mutableListOf<Formula>()
         val numBasePremises = (difficulty / 2).coerceIn(2, 4)
 
-        for (i in 1..numBasePremises) {
+        (1..numBasePremises).forEach { i ->
             if (availableVars.isNotEmpty()) {
                 val variable = availableVars.removeAt(0)
                 val premiseFormula = if (Math.random() > 0.5) {

@@ -6,14 +6,7 @@ package com.elsoft.whatthewff.logic
 import org.junit.Assert.*
 import org.junit.Test
 
-class WffParserTest {
-
-    // A helper function to easily create Formula objects from strings for testing.
-    private fun f(formulaString: String): Formula {
-        val tileMap = AvailableTiles.allTiles.associateBy { it.symbol }
-        val tiles = formulaString.mapNotNull { char -> tileMap[char.toString()] }
-        return Formula(tiles)
-    }
+class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test simple variable parses correctly`() {
