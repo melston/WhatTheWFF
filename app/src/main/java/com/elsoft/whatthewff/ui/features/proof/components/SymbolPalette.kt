@@ -18,7 +18,8 @@ import com.elsoft.whatthewff.logic.LogicTile
 @Composable
 fun SymbolPalette(variables: List<LogicTile>,
                   state: DragAndDropState) {
-    val operators = AvailableTiles.connectors
+    val operators = AvailableTiles.operators
+    val grouping = AvailableTiles.grouping
     LazyRow(
         modifier = Modifier.Companion
             .fillMaxWidth()
@@ -30,7 +31,7 @@ fun SymbolPalette(variables: List<LogicTile>,
                 Button(onClick = { /* Drag Only */ }) {
                     Text(
                         symbol.symbol,
-                        fontSize = 16.sp,
+                        fontSize = 14.sp,
                         fontFamily = FontFamily.Companion.Monospace
                     )
                 }
@@ -48,7 +49,25 @@ fun SymbolPalette(variables: List<LogicTile>,
                 Button(onClick = { /* Drag Only */ }) {
                     Text(
                         operator.symbol,
-                        fontSize = 16.sp,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Companion.Monospace
+                    )
+                }
+            }, state = state)
+        }
+    }
+    LazyRow(
+        modifier = Modifier.Companion
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        items(grouping) { operator ->
+            DraggableItem(dataToDrop = DragData.NewTile(operator), content = {
+                Button(onClick = { /* Drag Only */ }) {
+                    Text(
+                        operator.symbol,
+                        fontSize = 12.sp,
                         fontFamily = FontFamily.Companion.Monospace
                     )
                 }
