@@ -10,7 +10,6 @@ import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 import org.jgrapht.Graphs
 import org.jgrapht.graph.DefaultEdge
 import org.jgrapht.graph.DirectedAcyclicGraph
-import java.util.Collections
 import kotlin.collections.shuffle
 
 private val debug = true
@@ -178,8 +177,8 @@ class PlannedProblemGenerator {
 
                 val conclusionShape = ruleConclusionShapes[rule]!!
                 val constraint = currentNode.conclusionConstraint
-                // A rule is applicable if its conclusion shape matches the constraint,
-                // or if the constraint is 'Any'.
+                // A rule is applicable if its conclusion shape matches the
+                // constraint, or if the constraint is 'Any'.
                 val shapeOk = when (constraint) {
                     FormulaShape.Any -> true
                     else -> conclusionShape == constraint ||
@@ -198,10 +197,10 @@ class PlannedProblemGenerator {
             }
 
             currentNode.rule = rule
-
             val premiseShapes = rulePremiseShapes[rule]!!
             val newChildBlueprints = premiseShapes.map { shape ->
-                // The child's conclusion MUST satisfy the parent's premise requirement.
+                // The child's conclusion MUST satisfy the parent's
+                // premise requirement.
                 ProofNode(id = generateId(), conclusionConstraint = shape)
             }
 
@@ -294,12 +293,12 @@ class PlannedProblemGenerator {
         vars: VarLists
     ): List<Application> {
         if (node.arePossibleApplicationsGenerated) return node.possibleApplications
-
         node.possibleApplications.clear()
+
         val predecessorProofNodes = Graphs.predecessorListOf(graph, node)
 
         if (predecessorProofNodes.isEmpty()) {
-            addLeafApplications(node)
+            addLeafApplications(node, vars)
         } else {
             val ruleToApply = node.rule!!
 
@@ -312,7 +311,7 @@ class PlannedProblemGenerator {
                 childConclusions.forEach { p ->
                     // Create disjunctions with a shuffled subset of all possible variables
                     // to give the solver more options without being overwhelming.
-                    VarLists.allVars.shuffled().take(5).forEach { q ->
+                    vars.availableVars.shuffled().take(2).forEach { q ->
                         if (p.normalize() != q.normalize()) {
                             node.possibleApplications.add(
                                 Application(
@@ -328,7 +327,9 @@ class PlannedProblemGenerator {
                 // Original logic for all other rules
                 val premiseConclusionOptionsPerNode: List<List<Formula>> =
                     predecessorProofNodes.map { predNode ->
-                        getPossibleApplications(predNode, graph, vars).map { app -> app.conclusion }.distinct()
+                        getPossibleApplications(predNode, graph, vars).map {
+                            app -> app.conclusion
+                        }.distinct()
                     }
 
                 if (premiseConclusionOptionsPerNode.any { it.isEmpty() }) {
@@ -367,32 +368,34 @@ class PlannedProblemGenerator {
         return node.possibleApplications.distinct()
     }
 
-    private fun addLeafApplications(node: ProofNode) {
+    private fun addLeafApplications(node: ProofNode, vars: VarLists) {
         val formulas = mutableListOf<Formula>()
+
+        // Create a pool of potential atomic building blocks.
+        // 1. All variables that haven't been used at all yet.
+        val baseAvailableVars = vars.availableVars.map { it.getBaseVariable() }
+        // 2. The specific form (e.g., 'p' or '~p') of variables that have already been used.
+        val specificUsedVars = vars.usedVars
+        // 3. Combine and shuffle them to get a rich set of possibilities.
+        val allPossibleAtoms =
+            (baseAvailableVars + specificUsedVars).distinct().shuffled()
+
         when (node.conclusionConstraint) {
-            is FormulaShape.IsImplication -> {
-                VarLists.allVars.shuffled().take(2).let {
-                    if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
-                }
+            is FormulaShape.IsImplication -> allPossibleAtoms.take(2).let {
+                if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
             }
-            is FormulaShape.IsConjunction -> {
-                VarLists.allVars.shuffled().take(2).let {
-                    if (it.size == 2) formulas.add(fAnd(it[0], it[1]))
-                }
+            is FormulaShape.IsConjunction -> allPossibleAtoms.take(2).let {
+                if (it.size == 2) formulas.add(fAnd(it[0], it[1]))
             }
-            is FormulaShape.IsDisjunction -> {
-                VarLists.allVars.shuffled().take(2).let {
-                    if (it.size == 2) formulas.add(fOr(it[0], it[1]))
-                }
+            is FormulaShape.IsDisjunction -> allPossibleAtoms.take(2).let {
+                if (it.size == 2) formulas.add(fOr(it[0], it[1]))
             }
-            is FormulaShape.IsNegation -> {
-                VarLists.allVars.shuffled().firstOrNull()?.let {
-                    formulas.add(fNeg(it))
-                }
+            is FormulaShape.IsNegation -> allPossibleAtoms.firstOrNull()?.let {
+                formulas.add(fNeg(it))
             }
-            else -> { // Any or IsAtomic
-                formulas.addAll(VarLists.allVars)
-                formulas.addAll(VarLists.allVars.map { fNeg(it) })
+            else -> {
+                formulas.addAll(allPossibleAtoms)
+                formulas.addAll(allPossibleAtoms.map { fNeg(it) })
             }
         }
 
