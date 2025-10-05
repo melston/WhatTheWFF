@@ -301,7 +301,7 @@ object ProofValidator {
             justification.lineReferences
                 .mapNotNull { provenTrees[it] }
                 .map { treeToFormula(it) }
-                .toSet()
+                .toList()
         val conclusionFormula = treeToFormula(conclusionTree)
 
         return if (InferenceRuleEngine.isValidInference(

@@ -3,6 +3,8 @@
 
 package com.elsoft.whatthewff.ui.features.game
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -11,8 +13,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.elsoft.whatthewff.logic.PlannedProblemGenerator
 import com.elsoft.whatthewff.logic.Problem
-import com.elsoft.whatthewff.logic.ProblemGenerator
+
+private val problemGenerator: PlannedProblemGenerator = PlannedProblemGenerator()
 
 /**
  * A screen that allows users to select a difficulty level for a generated proof.
@@ -20,6 +24,7 @@ import com.elsoft.whatthewff.logic.ProblemGenerator
  * @param onProblemGenerated A callback executed with the newly generated problem.
  * @param onBackClicked A callback to navigate back to the main screen.
  */
+@RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameModeScreen(
@@ -56,17 +61,35 @@ fun GameModeScreen(
             DifficultyButton(
                 text = "Easy",
                 difficulty = 2, // e.g., 2 backward steps
-                onClick = { onProblemGenerated(ProblemGenerator.generate(2)) }
+                onClick = {
+                    // Call generate() directly on the PlannedProblemGenerator object
+                    // and handle the nullable result.
+                    problemGenerator.generate(2)?.let { problem ->
+                        onProblemGenerated(problem)
+                    }
+                }
             )
             DifficultyButton(
                 text = "Medium",
                 difficulty = 4, // e.g., 4 backward steps
-                onClick = { onProblemGenerated(ProblemGenerator.generate(4)) }
+                onClick = {
+                    // Call generate() directly on the PlannedProblemGenerator object
+                    // and handle the nullable result.
+                    problemGenerator.generate(4)?.let { problem ->
+                        onProblemGenerated(problem)
+                    }
+                }
             )
             DifficultyButton(
                 text = "Hard",
                 difficulty = 6, // e.g., 6 backward steps
-                onClick = { onProblemGenerated(ProblemGenerator.generate(6)) }
+                onClick = {
+                    // Call generate() directly on the PlannedProblemGenerator object
+                    // and handle the nullable result.
+                    problemGenerator.generate(6)?.let { problem ->
+                        onProblemGenerated(problem)
+                    }
+                }
             )
         }
     }

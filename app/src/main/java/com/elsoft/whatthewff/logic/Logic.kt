@@ -1,5 +1,7 @@
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
+
 // File: Logic.kt
 // This file will contain the core data models for our symbolic logic engine.
 
@@ -43,6 +45,13 @@ data class Formula(val tiles: List<LogicTile>) {
     // Helper property to easily get the string representation of a formula
     val stringValue: String
         get() = tiles.joinToString(separator = "") { it.symbol }
+
+    fun getUniqueVars(): List<Formula> {
+        return tiles
+            .filter { it.type == SymbolType.VARIABLE }
+            .distinct()
+            .map { Formula(listOf(it)) }
+    }
 
     override fun toString(): String {
         return stringValue
@@ -98,6 +107,7 @@ object AvailableTiles {
  * @property abbreviation The standard abbreviation for the rule.
  */
 enum class InferenceRule(val ruleName: String, val abbreviation: String) {
+    ASSUMPTION("Assumption", "Ass"),
     ABSORPTION("Absorption", "Abs"),
     ADDITION("Addition", "Add"),
     CONJUNCTION("Conjunction", "Conj"),

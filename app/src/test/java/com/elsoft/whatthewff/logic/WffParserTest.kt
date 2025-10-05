@@ -10,7 +10,7 @@ class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test simple variable parses correctly`() {
-        val formula = f("p")
+        val formula = createFormula("p")
         val result = WffParser.parse(formula)
         assertNotNull("Parser should not return null for a simple variable", result)
         assertTrue("Result should be a VariableNode", result is FormulaNode.VariableNode)
@@ -19,7 +19,7 @@ class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test simple negation parses correctly`() {
-        val formula = f("¬p")
+        val formula = createFormula("¬p")
         val result = WffParser.parse(formula)
         assertNotNull("Parser should not return null for a simple negation", result)
         assertTrue("Result should be a UnaryOpNode", result is FormulaNode.UnaryOpNode)
@@ -30,7 +30,7 @@ class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test simple binary expression parses correctly`() {
-        val formula = f("(p∧q)")
+        val formula = createFormula("(p∧q)")
         val result = WffParser.parse(formula)
         assertNotNull("Parser should not return null for a simple binary expression", result)
         assertTrue("Result should be a BinaryOpNode", result is FormulaNode.BinaryOpNode)
@@ -42,7 +42,7 @@ class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test binary expression without outer parentheses parses correctly`() {
-        val formula = f("p∨q")
+        val formula = createFormula("p∨q")
         val result = WffParser.parse(formula)
         assertNotNull("Parser should not return null for a binary expression without outer parens", result)
         assertTrue("Result should be a BinaryOpNode", result is FormulaNode.BinaryOpNode)
@@ -51,7 +51,7 @@ class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test complex nested formula parses correctly`() {
-        val formula = f("((p→q)∧¬r)")
+        val formula = createFormula("((p→q)∧¬r)")
         val result = WffParser.parse(formula)
         assertNotNull("Parser should not return null for a complex formula", result)
         assertTrue("Root should be a BinaryOpNode", result is FormulaNode.BinaryOpNode)
@@ -64,28 +64,28 @@ class WffParserTest : LogicTestBase() {
 
     @Test
     fun `test invalid formula with mismatched parentheses returns null`() {
-        val formula = f("(p∧q") // Missing closing parenthesis
+        val formula = createFormula("(p∧q") // Missing closing parenthesis
         val result = WffParser.parse(formula)
         assertNull("Parser should return null for mismatched parentheses", result)
     }
 
     @Test
     fun `test invalid formula with extra tokens returns null`() {
-        val formula = f("(p∧q)r") // Extra token at the end
+        val formula = createFormula("(p∧q)r") // Extra token at the end
         val result = WffParser.parse(formula)
         assertNull("Parser should return null for formulas with extra tokens", result)
     }
 
     @Test
     fun `test invalid formula with operator in wrong place returns null`() {
-        val formula = f("(p∧)") // Operator in wrong place
+        val formula = createFormula("(p∧)") // Operator in wrong place
         val result = WffParser.parse(formula)
         assertNull("Parser should return null for misplaced operator", result)
     }
 
     @Test
     fun `test empty formula returns null`() {
-        val formula = f("")
+        val formula = createFormula("")
         val result = WffParser.parse(formula)
         assertNull("Parser should return null for an empty formula", result)
     }

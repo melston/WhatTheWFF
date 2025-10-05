@@ -4,14 +4,14 @@ data class LineInfo(val formulaString: String, val justification: Justification)
 
 open class LogicTestBase {
     // A helper function to easily create Formula objects from strings for testing.
-    fun f(formulaString: String): Formula {
+    fun createFormula(formulaString: String): Formula {
         return WffParser.parseFormulaFromString(formulaString)
     }
 
-    fun createFormulas(vararg wffs: String): Set<Formula> {
+    fun createFormulas(vararg wffs: String): List<Formula> {
         return wffs
                 .map { wff -> WffParser.parseFormulaFromString(wff) }
-                .toSet()
+                .toList()
     }
 
     fun createProof(lines: List<LineInfo>): Proof {
@@ -21,5 +21,13 @@ open class LogicTestBase {
                       line.justification)
         })
 
+    }
+
+    fun compareFormulas(f1: Formula, f2: Formula): Boolean {
+        return WffParser.parse(f1) == WffParser.parse(f2)
+    }
+
+    fun Set<Formula>.doesContain(f: Formula): Boolean {
+        return this.any { compareFormulas(it, f) }
     }
 }

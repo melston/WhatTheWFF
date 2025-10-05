@@ -44,10 +44,12 @@ object ProofSuggester {
         rule: InferenceRule,
         selectedLines: List<ProofLine>
     ): List<Suggestion> {
-        val selectedFormulas = selectedLines.map { it.formula }.toSet()
+        val selectedFormulas = selectedLines.map { it.formula }.toList()
 
         // --- KEY CHANGE: Defer all logic to the central engine ---
-        val conclusions = InferenceRuleEngine.getPossibleConclusions(rule, selectedFormulas)
+        val conclusions =
+            InferenceRuleEngine.getPossibleConclusions(rule,
+                                                       selectedFormulas)
 
         return conclusions.map { Suggestion(it) }
     }

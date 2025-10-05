@@ -11,6 +11,7 @@ import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.leftParen
 import com.elsoft.whatthewff.logic.AvailableTiles.not
 import com.elsoft.whatthewff.logic.AvailableTiles.rightParen
+import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
 //import com.elsoft.whatthewff.logic.AvailableTiles.not
 
@@ -144,3 +145,14 @@ object WffParser {
         }
     }
 }
+
+/**
+ * Normalizes a Formula by parsing it into a syntax tree and then regenerating it.
+ * This removes cosmetic differences like extra parentheses, ensuring a canonical representation.
+ */
+fun Formula.normalize(): Formula? {
+    val node = WffParser.parse(this) ?: return null
+    return treeToFormula(node)
+}
+
+

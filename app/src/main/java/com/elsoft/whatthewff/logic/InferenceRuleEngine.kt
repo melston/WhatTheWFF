@@ -10,11 +10,16 @@ import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
 import com.elsoft.whatthewff.logic.RuleGenerators.fOr
 import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
+data class Application(val conclusion: Formula,
+                       val rule: InferenceRule,
+                       val premises: List<Formula>) {}
+
 object InferenceRuleEngine {
 
-    // --- Public-facing function for the Suggester ---
-    fun getPossibleConclusions(rule: InferenceRule, premises: Set<Formula>): List<Formula> {
+    // --- Public-facing function for the problem generator ---
+    fun getPossibleApplications(rule: InferenceRule, premises: List<Formula>): List<Application> {
         return when (rule) {
+            InferenceRule.ASSUMPTION -> emptyList()
             InferenceRule.ABSORPTION -> deriveAbsorption(premises)
             InferenceRule.ADDITION -> deriveAddition(premises)
             InferenceRule.CONJUNCTION -> deriveConjunction(premises)
@@ -28,8 +33,13 @@ object InferenceRuleEngine {
         }
     }
 
+    // --- Public-facing function for the Suggester ---
+    fun getPossibleConclusions(rule: InferenceRule, premises: List<Formula>): List<Formula> {
+        return getPossibleApplications(rule, premises).map { it.conclusion }
+    }
+
     // --- Public-facing function for the Validator ---
-    fun isValidInference(rule: InferenceRule, premises: Set<Formula>, conclusion: Formula): Boolean {
+    fun isValidInference(rule: InferenceRule, premises: List<Formula>, conclusion: Formula): Boolean {
         // A simple way to validate is to see if the conclusion is in the list of possible derivations.
         val conclusionNode = WffParser.parse(conclusion)
 
@@ -52,8 +62,9 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveAbsorption(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveAbsorption(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveAbsorption received premises: $premises")
+        val conclusions = mutableListOf<Application>()
 
         premises
             .mapNotNull { formula ->
@@ -67,8 +78,15 @@ object InferenceRuleEngine {
             .forEach { node ->
                 val antecedent = treeToFormula(node.left)
                 val consequent = treeToFormula(node.right)
-                conclusions.add(fImplies(antecedent, fAnd(antecedent, consequent)))
+                conclusions.add(
+                    Application(
+                        fImplies(antecedent, fAnd(antecedent, consequent)),
+                        InferenceRule.ABSORPTION,
+                        listOf(treeToFormula(node))
+                    )
+                )
             }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
@@ -80,13 +98,15 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveAddition(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveAddition(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveAddition received premises: $premises")
+        val conclusions = mutableListOf<Application>()
         for (p in premises) {
             for (q in premises) {
                 if (p != q) {
-                    conclusions.add(fOr(p, q))
-                    conclusions.add(fOr(q, p))
+                    conclusions.add(Application(
+                        fOr(p, q), InferenceRule.ADDITION, listOf(p, q))
+                    )
                 }
             }
         }
@@ -101,28 +121,58 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveConjunction(premises: Set<Formula>): List<Formula> {
+    private fun deriveConjunction(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveConjunction received premises: $premises")
         if (premises.size < 2) return emptyList()
-        val conclusions = mutableListOf<Formula>()
+        val conclusions = mutableListOf<Application>()
         val premiseList = premises.toList()
         for (i in premiseList.indices) {
             for (j in i + 1 until premiseList.size) {
-                conclusions.add(fAnd(premiseList[i], premiseList[j]))
-                conclusions.add(fAnd(premiseList[j], premiseList[i]))
+                conclusions.add(
+                    Application(
+                        fAnd(premiseList[i], premiseList[j]),
+                        InferenceRule.CONJUNCTION,
+                        listOf(premiseList[i], premiseList[j])
+                    )
+                )
+                conclusions.add(
+                    Application(
+                        fAnd(premiseList[j], premiseList[i]),
+                        InferenceRule.CONJUNCTION,
+                        listOf(premiseList[j], premiseList[i])
+                    )
+               )
             }
         }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
     /**
-     * Constructive Dilemma: (P → Q) ∧ (R → S), P ∨ R |- (Q ∨ S)
+     * Constructive Dilemma: ((P → Q) ∧ (R → S)), P ∨ R |- (Q ∨ S)
      *
      * Find all conjunctions of implications in the set of premises.  If the disjunction
      * of the antecedents of both implications are also in the set of premises, then
      * construct a new disjunction with the consequents of both implications.
      */
-    private fun deriveConstructiveDilemma(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveConstructiveDilemma(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveConstructiveDilemma received premises: $premises")
+        val conclusions = mutableListOf<Application>()
+
+        // Gather all conjunctions of implications
+        val allConjunctions = premises.filter { f ->
+            WffParser.parse(f)?.let { node ->
+                node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and &&
+                node.left is FormulaNode.BinaryOpNode &&
+                node.left.operator == AvailableTiles.implies &&
+                node.right is FormulaNode.BinaryOpNode &&
+                node.right.operator == AvailableTiles.implies
+            } ?: false
+        }.map { conj ->
+            val node = WffParser.parse(conj)!! as FormulaNode.BinaryOpNode
+            node to ((node.left as FormulaNode.BinaryOpNode) to
+                     (node.right as FormulaNode.BinaryOpNode))
+        }
 
         // 1. Gather ALL available implications, both standalone and from conjunctions.
         val allImplications = premises.flatMap { f ->
@@ -145,28 +195,46 @@ object InferenceRuleEngine {
 
         // 2. Gather all available disjunctions.
         val disjunctions = premises.mapNotNull { f ->
-            WffParser.parse(f)?.let { if (it is FormulaNode.BinaryOpNode && it.operator == AvailableTiles.or) it else null }
+            WffParser.parse(f)?.let {
+                if (it is FormulaNode.BinaryOpNode && it.operator == AvailableTiles.or) it
+                else null
+            }
         }
 
         if (allImplications.size < 2 || disjunctions.isEmpty()) return emptyList()
 
         // 3. Iterate through all pairs of implications and check against the disjunctions.
-        for (i in allImplications.indices) {
-            for (j in i + 1 until allImplications.size) {
-                val pNode = allImplications[i].left
-                val qNode = allImplications[i].right
-                val rNode = allImplications[j].left
-                val sNode = allImplications[j].right
+        allConjunctions.forEach { p ->
+            val conj = p.first
+            val firstImpl = p.second.first
+            val secondImpl = p.second.second
+            val pNode = firstImpl.left
+            val qNode = firstImpl.right
+            val rNode = secondImpl.left
+            val sNode = secondImpl.right
 
-                // Construct the required disjunctive premise (P v R)
-                val requiredDisjNode = WffParser.parse(fOr(treeToFormula(pNode), treeToFormula(rNode)))
+            // Construct the required disjunctive premise (P v R)
+            val requiredDisjNode =
+                WffParser.parse(fOr(treeToFormula(pNode),
+                                    treeToFormula(rNode))
+                )
 
-                // Check if any of the provided disjunctions match
-                if (disjunctions.any { it == requiredDisjNode }) {
-                    conclusions.add(fOr(treeToFormula(qNode), treeToFormula(sNode)))
+            // Check if any of the provided disjunctions match
+            disjunctions.filter { it == requiredDisjNode }
+                .map { dis ->
+                    conclusions.add(
+                        Application(
+                            fOr(treeToFormula(qNode), treeToFormula(sNode)),
+                            InferenceRule.CONSTRUCTIVE_DILEMMA,
+                            listOf(
+                                treeToFormula(conj),
+                                treeToFormula(dis)
+                            )
+                        )
+                    )
                 }
-            }
         }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
@@ -179,8 +247,9 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveDisjunctiveSyllogism(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveDisjunctiveSyllogism(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveDisjunctiveSyllogism received premises: $premises")
+        val conclusions = mutableListOf<Application>()
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
@@ -193,13 +262,30 @@ object InferenceRuleEngine {
             .forEach { node ->
                 val disjunct1 = node.left
                 val disjunct2 = node.right
-                if (premises.contains(fNeg(treeToFormula(disjunct1)))) {
-                    conclusions.add(treeToFormula(disjunct2))
-                }
-                if (premises.contains(fNeg(treeToFormula(disjunct2)))) {
-                    conclusions.add(treeToFormula(disjunct1))
-                }
+                premises
+                    .filter {it == fNeg(treeToFormula(disjunct1)) }
+                    .map {
+                        conclusions.add(
+                            Application(
+                                treeToFormula(disjunct2),
+                                InferenceRule.DISJUNCTIVE_SYLLOGISM,
+                                listOf(it, treeToFormula(node))
+                            )
+                        )
+                    }
+                premises
+                    .filter {it == fNeg(treeToFormula(disjunct2)) }
+                    .map {
+                        conclusions.add(
+                            Application(
+                                treeToFormula(disjunct1),
+                                InferenceRule.DISJUNCTIVE_SYLLOGISM,
+                                listOf(treeToFormula(node), it)
+                            )
+                        )
+                    }
             }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
@@ -212,8 +298,9 @@ object InferenceRuleEngine {
      * of the second implication.
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.    */
-    private fun deriveHypotheticalSyllogism(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveHypotheticalSyllogism(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveHypotheticalSyllogism received premises: $premises")
+        val conclusions = mutableListOf<Application>()
         val implications = premises
             .mapNotNull { formula ->
                 // Try to parse, return null if not a BinaryOpNode or not an implication
@@ -228,28 +315,33 @@ object InferenceRuleEngine {
                     null
                 }
             }
-        if (implications.size < 2) return conclusions
+        if (implications.size < 2) {
+//            println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
+            return conclusions
+        }
 
         // implications now has a list of pairs of formulas and their parsed nodes
         for (i in implications.indices) {
-            for (j in (i + 1) until implications.size) { // Ensures each pair is visited once
-                val (_, node1) = implications[i] // Destructuring for node1
-                val (_, node2) = implications[j] // Destructuring for node2
+            for (j in implications.indices) { // Ensures each pair is visited once
+                if (i == j) continue // Don't compare the same pair
+
+                val (formula1, node1) = implications[i] // Destructuring for node1
+                val (formula2, node2) = implications[j] // Destructuring for node2
 
                 // Check A->B, B->C
                 if (node1.right == node2.left) {
                     conclusions.add(
-                        fImplies(treeToFormula(node1.left),
-                                 treeToFormula(node2.right)))
-                }
-                // Check B->C, A->B (if order matters for the input implications, or if they are different implications)
-                if (node2.right == node1.left) {
-                    conclusions.add(
-                        fImplies(treeToFormula(node2.left),
-                                 treeToFormula(node1.right)))
+                        Application(
+                            fImplies(treeToFormula(node1.left),
+                                     treeToFormula(node2.right)),
+                            InferenceRule.HYPOTHETICAL_SYLLOGISM,
+                            listOf(formula1, formula2)
+                        )
+                    )
                 }
             }
         }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
@@ -261,8 +353,9 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveModusPonens(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveModusPonens(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveModusPonens received premises: $premises")
+        val conclusions = mutableListOf<Application>()
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
@@ -272,13 +365,21 @@ object InferenceRuleEngine {
                     null
                 }
             }
-            .forEach { node ->
-                val antecedent = treeToFormula(node.left)
-                val consequent = treeToFormula(node.right)
+            .forEach { impl ->
+                val antecedent = treeToFormula(impl.left)
+                val consequent = treeToFormula(impl.right)
                 if (premises.contains(antecedent)) {
-                    conclusions.add(consequent)
+                    conclusions.add(
+                        Application(
+                            consequent,
+                            InferenceRule.MODUS_PONENS,
+                            listOf(treeToFormula(impl),
+                                   antecedent)
+                        )
+                    )
                 }
             }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
@@ -291,8 +392,9 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveModusTollens(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveModusTollens(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveModusTollens received premises: $premises")
+        val conclusions = mutableListOf<Application>()
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
@@ -302,13 +404,21 @@ object InferenceRuleEngine {
                     null
                 }
             }
-            .forEach { node ->
-                val consequent = treeToFormula(node.right)
+            .forEach { impl ->
+                val consequent = treeToFormula(impl.right)
                 val negConsequent = fNeg(consequent)
                 if (premises.contains(negConsequent)) {
-                    conclusions.add(fNeg(treeToFormula(node.left)))
+                    conclusions.add(
+                        Application(
+                            fNeg(treeToFormula(impl.left)),
+                            InferenceRule.MODUS_TOLLENS,
+                            listOf(treeToFormula(impl),
+                                   negConsequent)
+                        )
+                    )
                 }
             }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 
@@ -320,8 +430,9 @@ object InferenceRuleEngine {
      * @param premises The set of premises to use in the derivation.
      * @return A list of all possible conclusions derived from the premises.
      */
-    private fun deriveSimplification(premises: Set<Formula>): List<Formula> {
-        val conclusions = mutableListOf<Formula>()
+    private fun deriveSimplification(premises: List<Formula>): List<Application> {
+//        println("ENGINE_DEBUG: deriveSimplification received premises: $premises")
+        val conclusions = mutableListOf<Application>()
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
@@ -331,12 +442,25 @@ object InferenceRuleEngine {
                     null
                 }
             }
-            .forEach { node ->
-                val left = treeToFormula(node.left)
-                val right = treeToFormula(node.right)
-                conclusions.add(left)
-                conclusions.add(right)
+            .forEach { conj ->
+                val left = treeToFormula(conj.left)
+                val right = treeToFormula(conj.right)
+                conclusions.add(
+                    Application(
+                        left,
+                        InferenceRule.SIMPLIFICATION,
+                        listOf(treeToFormula(conj))
+                    )
+                )
+                conclusions.add(
+                    Application(
+                        right,
+                        InferenceRule.SIMPLIFICATION,
+                        listOf(treeToFormula(conj))
+                    )
+                )
             }
+//        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
         return conclusions.distinct()
     }
 }
