@@ -18,6 +18,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
 
     buildTypes {
         release {

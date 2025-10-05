@@ -2,6 +2,7 @@
 
 package com.elsoft.whatthewff.logic
 
+
 import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
 import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
 import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
@@ -10,12 +11,11 @@ import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 import org.jgrapht.Graphs
 import org.jgrapht.graph.DefaultEdge
 import org.jgrapht.graph.DirectedAcyclicGraph
-import kotlin.collections.shuffle
 
-private val debug = true
+private const val debug = false
 private fun log(depth: Int, message: String) {
     if (debug) {
-        val indent = "  ".repeat(depth)
+        val indent = " . ".repeat(depth)
         println("$indent$message")
     }
 }
@@ -25,13 +25,13 @@ private fun log(depth: Int, message: String) {
 /**
  * A constraint that defines the required logical shape of a formula at a node.
  */
-sealed class FormulaShape {
-    object Any : FormulaShape()
-    object IsImplication : FormulaShape()
-    object IsConjunction : FormulaShape()
-    object IsDisjunction : FormulaShape()
-    object IsNegation : FormulaShape()
-    object IsAtomic : FormulaShape()
+sealed class FormulaShape(val name: String) {
+    object Any : FormulaShape("Any")
+    object IsImplication : FormulaShape("IsImplication")
+    object IsConjunction : FormulaShape("IsConjunction")
+    object IsDisjunction : FormulaShape("IsDisjunction")
+    object IsNegation : FormulaShape("IsNegation")
+    object IsAtomic : FormulaShape("IsAtomic")
 }
 
 /**
@@ -98,6 +98,33 @@ data class ProofNode(
     }
 }
 
+/**
+ * PlannedProblemGenerator:  A generator for Problems.
+ * It has the following elements:
+ * <ul>
+ *   <li>Planner (generatePlan): Its only job is to create a structurally valid,
+ *       but abstract, proof tree. It uses conclusionConstraint to ensure rules are
+ *       chained together logically (e.g., Simplification can't feed into Absorption's
+ *       premise). It doesn't know anything about specific formulas like p or q. </li>
+ *   <li>Top-Down Solver (selectApplicationPath): This is the "brains" of the operation. </li>
+ *     <ul>
+ *         <li>It starts at the root of the plan with a general goal (e.g.,
+ *             "prove a formula of any shape").
+ *         <li>It works top-down. When it encounters a node for a rule like MODUS_PONENS,
+ *             it doesn't try to solve the children first. Instead, it generates a
+ *             potential set of concrete premises (e.g., p -> q, p). </li>
+ *         <li>It then recursively calls itself on its children with a specific goal:
+ *             "You must prove p -> q" and "You must prove p".</li>
+ *         <li>This completely avoids the combinatorial explosion because it never tries
+ *             to pre-calculate all possibilities. It performs a targeted search for
+ *             just one valid proof.
+ *     </ul>
+ *   <li>No More Infinite Loop: The fatal mutual recursion between selectApplicationPath
+ *       and findSolutionsForNode is gone. There is now only one primary recursive solver,
+ *       which guarantees termination (either by finding a solution or by exhausting all
+ *       valid, non-repeating variable assignments).
+ * </ul>
+ */
 class PlannedProblemGenerator {
 
     private val maxGenerationAttempts = 50 // To prevent infinite loops
@@ -106,22 +133,18 @@ class PlannedProblemGenerator {
 
     fun generate(difficulty: Int): Problem? {
         nextId = 0 // Reset for each new generation
-        repeat(maxGenerationAttempts) {
-            val attempt = it
-            log(0, "*** Generating problem attempt $it")
+        repeat(maxGenerationAttempts) { attempt: Int ->
+            log(0, "\n*** Generating problem attempt $attempt")
             val plan = generatePlan(difficulty)
-
             if (debug) printTree(plan)
 
             val problem = generateProblemFromPlan(plan)
-
             if (problem == null) {
-                log(0, "*** Generated null problem on attempt $it")
+                log(0, "***!!! Generated null problem on attempt $attempt")
             } else {
                 if (problem.premises.isNotEmpty()) {
-                    val consistencyCheck = problem.premises.map {
-                        it.getAtomicAssertions()
-                    }
+                    val consistencyCheck =
+                        problem.premises.map { it.getAtomicAssertions() }
                         .flatten()
                         .distinct()
                     val contradiction = consistencyCheck.any { p1 ->
@@ -136,14 +159,16 @@ class PlannedProblemGenerator {
                             log(0, "*** Found a valid problem on attempt $attempt")
                             return problem
                         }
-                        log(0, "*** Found a problem with a premise equal to the conclusion on attempt $attempt")
+                        log(0, "***!!! Found a problem with a premise equal to the conclusion on attempt $attempt")
+                    } else {
+                        log(0, "***!!! Found a contradiction while generating problem on attempt $attempt")
                     }
-                    log(0, "*** Found a contradiction while generating problem on attempt $attempt")
+                } else {
+                    log(0, "***!!! Found a problem with no premises on attempt $attempt")
                 }
-                log(0, "*** Found a problem with no premises on attempt $attempt")
             }
         }
-        log(0, "*** Failed to generate a valid problem after $maxGenerationAttempts attempts.")
+        log(0, "***!!! Failed to generate a valid problem after $maxGenerationAttempts attempts.")
         return null // Failed to generate a valid problem
     }
 
@@ -161,7 +186,6 @@ class PlannedProblemGenerator {
         while (goalsToSolve.isNotEmpty()) {
             if (stepsBudget <= 0) {
                 // If we are out of budget, this MUST be a leaf node (an assumption)
-                goalsToSolve.forEach { it.rule = InferenceRule.ASSUMPTION }
                 premiseNodes.addAll(goalsToSolve)
                 goalsToSolve.clear() // Ensure the loop terminates
                 continue
@@ -191,7 +215,6 @@ class PlannedProblemGenerator {
             val rule = applicableRules.ifEmpty { null }?.random()
 
             if (rule == null) {
-                currentNode.rule = InferenceRule.ASSUMPTION
                 premiseNodes.add(currentNode)
                 continue
             }
@@ -225,6 +248,8 @@ class PlannedProblemGenerator {
 
         premiseNodes.addAll(goalsToSolve)
         val finalPremises = premiseNodes.filter { node ->
+            // inDegreeOf finds the nodes that have no source nodes
+            // attached to them.
             graph.containsVertex(node) && graph.inDegreeOf(node) == 0
         }.toSet()
 
@@ -233,269 +258,187 @@ class PlannedProblemGenerator {
 
     private fun generateProblemFromPlan(plan: ProofPlan): Problem? {
         val vars = VarLists.create()
+        if (selectApplicationPath(plan.finalConclusionNode,
+                                  FormulaShape.Any,
+                                  plan.graph,
+                                  vars,
+                                  0)) {
+            val finalConclusionFormula =
+                plan.finalConclusionNode.selectedApplication?.conclusion
+                    ?: return null
+            val premises = plan.initialPremiseNodes
+                .mapNotNull { it.selectedApplication?.conclusion }
+                .distinct()
+                .sortedBy { it.toString() }
 
-        // *** Use a reversed (post-order) traversal ***
-        val traversal = plan.graph.reversed().iterator()
-        traversal.forEach { node ->
-            getPossibleApplications(node, plan.graph, vars)
-        }
-
-        val finalConclusionNode = plan.finalConclusionNode
-        val possibleFinalApplications = finalConclusionNode.possibleApplications.shuffled()
-
-        if (possibleFinalApplications.isEmpty()) {
-            log(1, "*** No possible final applications found.")
-            return null
-        }
-
-        for (finalApp in possibleFinalApplications) {
-            val selectionSuccessful = selectApplicationPath(
-                finalConclusionNode,
-                finalApp.conclusion,
-                plan.graph,
-                vars.copy(),
-                1
-            )
-            if (selectionSuccessful) {
-                val finalConclusionFormula =
-                    finalConclusionNode.selectedApplication?.conclusion
-                        ?: return null
-                val premises = plan.initialPremiseNodes
-                    .mapNotNull { it.selectedApplication?.conclusion }
-                    .distinct()
-                    .sortedBy { it.toString() }
-
-                if (premises.isEmpty() && finalConclusionFormula.isAtomicOrNegatedAtomic()) {
-                    return Problem(
-                        id = "gen_${System.currentTimeMillis()}",
-                        name = "Generated Problem",
-                        difficulty = plan.graph.vertexSet().size,
-                        premises = listOf(finalConclusionFormula),
-                        conclusion = finalConclusionFormula
-                    )
-                }
-
-                return Problem(
-                    id = "gen_${System.currentTimeMillis()}",
-                    name = "Generated Problem",
-                    difficulty = plan.graph.vertexSet().size,
-                    premises = premises,
-                    conclusion = finalConclusionFormula
-                )
-            }
+            return Problem("gen_${System.currentTimeMillis()}",
+                           "Generated Problem",
+                           premises,
+                           finalConclusionFormula,
+                           plan.graph.vertexSet().size)
         }
         return null
     }
 
-    private fun getPossibleApplications(
-        node: ProofNode,
-        graph: DirectedAcyclicGraph<ProofNode, DefaultEdge>,
-        vars: VarLists
-    ): List<Application> {
-        if (node.arePossibleApplicationsGenerated) return node.possibleApplications
-        node.possibleApplications.clear()
-
-        val predecessorProofNodes = Graphs.predecessorListOf(graph, node)
-
-        if (predecessorProofNodes.isEmpty()) {
-            addLeafApplications(node, vars)
-        } else {
-            val ruleToApply = node.rule!!
-
-            if (ruleToApply == InferenceRule.ADDITION) {
-                // Generate a richer set of possibilities for Addition
-                val child = predecessorProofNodes.first()
-                val childConclusions = getPossibleApplications(child, graph, vars).map {
-                    it.conclusion
-                }
-                childConclusions.forEach { p ->
-                    // Create disjunctions with a shuffled subset of all possible variables
-                    // to give the solver more options without being overwhelming.
-                    vars.availableVars.shuffled().take(2).forEach { q ->
-                        if (p.normalize() != q.normalize()) {
-                            node.possibleApplications.add(
-                                Application(
-                                    conclusion = fOr(p, q),
-                                    rule = InferenceRule.ADDITION,
-                                    premises = listOf(p)
-                                )
-                            )
-                        }
-                    }
-                }
-            } else {
-                // Original logic for all other rules
-                val premiseConclusionOptionsPerNode: List<List<Formula>> =
-                    predecessorProofNodes.map { predNode ->
-                        getPossibleApplications(predNode, graph, vars).map {
-                            app -> app.conclusion
-                        }.distinct()
-                    }
-
-                if (premiseConclusionOptionsPerNode.any { it.isEmpty() }) {
-                    node.arePossibleApplicationsGenerated = true
-                    return emptyList()
-                }
-
-                // Use a lazy sequence for the Cartesian product to avoid memory errors.
-                val productSequence = cartesianProductSequence(premiseConclusionOptionsPerNode)
-
-                productSequence.forEach { specificPremiseCombination ->
-                    val expectedPremiseCount = rulePremiseShapes[ruleToApply]?.size
-                    if (specificPremiseCombination.size == expectedPremiseCount) {
-                        val conclusionsFromEngine = InferenceRuleEngine.getPossibleApplications(
-                            ruleToApply,
-                            specificPremiseCombination
-                        )
-
-                        val validApplications = conclusionsFromEngine.filter { app ->
-                            val appPremisesNormalized = app.premises.mapNotNull {
-                                it.normalize()
-                            }.toSet()
-                            val specificCombinationNormalized =
-                                specificPremiseCombination.mapNotNull {
-                                    it.normalize()
-                                }.toSet()
-                            appPremisesNormalized == specificCombinationNormalized
-                        }
-                        node.possibleApplications.addAll(validApplications)
-                    }
-                }
-            }
-        }
-
-        node.arePossibleApplicationsGenerated = true
-        return node.possibleApplications.distinct()
-    }
-
-    private fun addLeafApplications(node: ProofNode, vars: VarLists) {
-        val formulas = mutableListOf<Formula>()
-
-        // Create a pool of potential atomic building blocks.
-        // 1. All variables that haven't been used at all yet.
-        val baseAvailableVars = vars.availableVars.map { it.getBaseVariable() }
-        // 2. The specific form (e.g., 'p' or '~p') of variables that have already been used.
-        val specificUsedVars = vars.usedVars
-        // 3. Combine and shuffle them to get a rich set of possibilities.
-        val allPossibleAtoms =
-            (baseAvailableVars + specificUsedVars).distinct().shuffled()
-
-        when (node.conclusionConstraint) {
-            is FormulaShape.IsImplication -> allPossibleAtoms.take(2).let {
-                if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
-            }
-            is FormulaShape.IsConjunction -> allPossibleAtoms.take(2).let {
-                if (it.size == 2) formulas.add(fAnd(it[0], it[1]))
-            }
-            is FormulaShape.IsDisjunction -> allPossibleAtoms.take(2).let {
-                if (it.size == 2) formulas.add(fOr(it[0], it[1]))
-            }
-            is FormulaShape.IsNegation -> allPossibleAtoms.firstOrNull()?.let {
-                formulas.add(fNeg(it))
-            }
-            else -> {
-                formulas.addAll(allPossibleAtoms)
-                formulas.addAll(allPossibleAtoms.map { fNeg(it) })
-            }
-        }
-
-        formulas.forEach { formula ->
-            node.possibleApplications.add(
-                Application(formula, InferenceRule.ASSUMPTION, emptyList())
-            )
-        }
-    }
-
     private fun selectApplicationPath(
         node: ProofNode,
-        requiredConclusion: Formula,
+        requiredShape: FormulaShape,
         graph: DirectedAcyclicGraph<ProofNode, DefaultEdge>,
         vars: VarLists,
-        depth: Int = 0
+        depth: Int
     ): Boolean {
-        log(depth, "-> selectApplicationPath for [${node.id}] seeking '${requiredConclusion}'")
-        val suitableApplications = node.possibleApplications
-            .filter { compareFormulas(it.conclusion, requiredConclusion) }
-            .shuffled()
+        log(depth, "-> selectApplicationPath for [${node.id}] seeking ${requiredShape.name}")
+        val predecessorNodes = Graphs.predecessorListOf(graph, node)
 
-        if (suitableApplications.isEmpty()) {
-            log(depth, "<- FAIL: No suitable applications found for '${requiredConclusion}'")
+        // BASE CASE: LEAF NODE
+        if (predecessorNodes.isEmpty()) {
+            val potentialFormulas = generateLeafFormulas(requiredShape, vars)
+            for (formula in potentialFormulas.shuffled()) {
+                val tempVars = vars.copy()
+                if (isConsistent(formula, tempVars)) {
+                    vars.commit(tempVars)
+                    node.selectedApplication = Application(formula, InferenceRule.ASSUMPTION, emptyList())
+                    log(depth, "   Leaf node [${node.id}] success with '${formula}'")
+                    return true
+                }
+            }
+            log(depth, "   Leaf node [${node.id}] FAILED to find consistent formula for ${requiredShape.name}")
             return false
         }
 
-        log(depth, "Found ${suitableApplications.size} suitable applications for '${requiredConclusion}'")
+        // RECURSIVE STEP: INTERMEDIATE NODE
+        val ruleToApply = node.rule ?: return false // Should not happen in a valid plan
 
-        for (potentialAppToSelect in suitableApplications) {
-            log(depth, "Attempting App: ${potentialAppToSelect.rule} -> '${potentialAppToSelect.conclusion}' with premises ${potentialAppToSelect.premises}")
-            node.selectedApplication = potentialAppToSelect
-            val tempVars = vars.copy()
+        // Generate a set of possible premise combinations this rule could use.
+        val premiseSets = generatePremiseCombinations(ruleToApply, requiredShape, vars)
 
-            if (potentialAppToSelect.rule == InferenceRule.ASSUMPTION) {
-                // This is a leaf node. We just need to check for variable consistency.
-                val atoms = potentialAppToSelect.conclusion.getAtomicAssertions()
-                var consistent = true
-                for (atom in atoms) {
-                    if (tempVars.useAtomicAssertion(atom) == null) {
-                        consistent = false
-                        break
-                    }
-                }
-
-                if (consistent) {
-                    // Commit var changes
-                    vars.availableVars = tempVars.availableVars
-                    vars.usedVars = tempVars.usedVars
-                    log(depth, "   Leaf node success. Using '${potentialAppToSelect.conclusion}'.")
-                    log(depth, "<- SUCCESS from leaf node [${node.id}]")
-                    return true
-                } else {
-                    log(depth, "   Leaf node FAILED (variable conflict) for '${potentialAppToSelect.conclusion}'.")
-                    node.selectedApplication = null
-                    continue // Try next suitable application
-                }
-            }
-
-            val predecessorProofNodes = Graphs.predecessorListOf(graph, node)
-            if (potentialAppToSelect.premises.size != predecessorProofNodes.size) {
-                node.selectedApplication = null
-                continue
-            }
-
-            // We must try every permutation of children against every permutation of premises.
-            val childPermutations = predecessorProofNodes.permutations()
-            val premisePermutations = potentialAppToSelect.premises.permutations()
-
+        for (premiseSet in premiseSets.shuffled()) {
+            val childPermutations = predecessorNodes.permutations()
             for (childPermutation in childPermutations) {
-                for (premisePermutation in premisePermutations) {
-                    val permutationVars = tempVars.copy()
-                    var allChildrenSolved = true
+                val tempVars = vars.copy()
+                var allChildrenSolved = true
+                val childSolutions = mutableMapOf<ProofNode, Application>()
 
-                    for (i in childPermutation.indices) {
-                        val child = childPermutation[i]
-                        val premise = premisePermutation[i]
+                for (i in childPermutation.indices) {
+                    val childNode = childPermutation[i]
+                    val requiredPremise = premiseSet[i]
 
-                        if (!selectApplicationPath(child, premise, graph, permutationVars, depth + 1)) {
-                            allChildrenSolved = false
-                            break // This permutation failed, try the next one
-                        }
+                    // Create a sub-solver state for this child
+                    val childVars = tempVars.copy()
+                    if (selectApplicationPath(childNode, requiredPremise, childVars, depth + 1)) {
+                        childSolutions[childNode] = childNode.selectedApplication!!
+                        tempVars.commit(childVars) // Commit the successful child's state
+                    } else {
+                        allChildrenSolved = false
+                        break // This assignment of (child, premise) failed.
                     }
+                }
 
-                    if (allChildrenSolved) {
-                        vars.availableVars = permutationVars.availableVars
-                        vars.usedVars = permutationVars.usedVars
-                        log(depth, "<- SUCCESS: Valid assignment found for [${node.id}]")
+                if (allChildrenSolved) {
+                    // All children were solved with a consistent set of premises.
+                    val finalPremises = predecessorNodes.map { childSolutions[it]!!.conclusion }
+                    val finalConclusion = InferenceRuleEngine.getPossibleConclusions(ruleToApply, finalPremises).firstOrNull()
+
+                    if (finalConclusion != null && formulaMatchesShape(finalConclusion, requiredShape)) {
+                        // Success! Commit selections and state.
+                        vars.commit(tempVars)
+                        node.selectedApplication = Application(finalConclusion, ruleToApply, finalPremises)
+                        childSolutions.forEach { (childNode, app) -> childNode.selectedApplication = app }
+                        log(depth, "<- SUCCESS for [${node.id}] with conclusion '${finalConclusion}'")
                         return true
                     }
                 }
             }
-
-            // If backtracking failed, clear the selection and try the next suitable application.
-            log(depth, "   Backtracking from App: ${potentialAppToSelect.rule} -> '${potentialAppToSelect.conclusion}'")
-            node.selectedApplication = null
         }
 
-        log(depth, "<- FAIL: All suitable applications for [${node.id}] failed.")
+        log(depth, "<- FAILED for [${node.id}]")
         return false
+    }
+
+    // Overload for the recursive call that requires a specific formula
+    private fun selectApplicationPath(
+        node: ProofNode,
+        requiredConclusion: Formula,
+        vars: VarLists,
+        depth: Int
+    ): Boolean {
+        // This is a much simpler case: we just need to solve this one node to be exactly this formula.
+        // This is always a leaf in our new design.
+        log(depth, "-> selectApplicationPath for [${node.id}] seeking specific formula '${requiredConclusion}'")
+        val tempVars = vars.copy()
+        if (isConsistent(requiredConclusion, tempVars)) {
+            vars.commit(tempVars)
+            node.selectedApplication = Application(requiredConclusion, InferenceRule.ASSUMPTION, emptyList())
+            log(depth, "   Leaf node [${node.id}] success with specific formula '${requiredConclusion}'")
+            return true
+        }
+        log(depth, "   Leaf node [${node.id}] FAILED, formula '${requiredConclusion}' is inconsistent")
+        return false
+    }
+
+    private fun isConsistent(formula: Formula, vars: VarLists): Boolean {
+        val atoms = formula.getAtomicAssertions()
+        return atoms.all { vars.useAtomicAssertion(it) != null }
+    }
+
+    private fun generateLeafFormulas(shape: FormulaShape, vars: VarLists): List<Formula> {
+        val formulas = mutableListOf<Formula>()
+        val baseAvailable = vars.availableVars
+        val specificUsed = vars.usedVars
+        val allPossibleAtoms = (baseAvailable + specificUsed).distinctBy { it.getBaseVariable().toString() }.shuffled()
+
+        when (shape) {
+            is FormulaShape.IsImplication -> allPossibleAtoms.take(2).let { if (it.size == 2) formulas.add(fImplies(it[0], it[1])) }
+            is FormulaShape.IsConjunction -> allPossibleAtoms.take(2).let { if (it.size == 2) formulas.add(fAnd(it[0], it[1])) }
+            is FormulaShape.IsDisjunction -> allPossibleAtoms.take(2).let { if (it.size == 2) formulas.add(fOr(it[0], it[1])) }
+            is FormulaShape.IsNegation -> allPossibleAtoms.firstOrNull()?.let {
+                if (WffParser.parse(it) is FormulaNode.VariableNode) formulas.add(fNeg(it))
+            }
+            else -> { // Any or IsAtomic
+                formulas.addAll(allPossibleAtoms)
+                formulas.addAll(allPossibleAtoms.mapNotNull { if (WffParser.parse(it) is FormulaNode.VariableNode) fNeg(it) else null })
+            }
+        }
+        if (formulas.isEmpty()) { // Fallback
+            VarLists.allVars.shuffled().take(2).let { if (it.size == 2) formulas.add(fImplies(it[0], it[1])) }
+        }
+        return formulas
+    }
+
+    private fun generatePremiseCombinations(rule: InferenceRule, shape: FormulaShape, vars: VarLists): List<List<Formula>> {
+        // This is a simplified stub. A real implementation would be more intelligent.
+        val atoms = vars.availableVars.shuffled().take(4)
+        if (atoms.size < 2) return emptyList()
+
+        val p = atoms[0]
+        val q = atoms[1]
+        val r = if (atoms.size > 2) atoms[2] else p
+        val s = if (atoms.size > 3) atoms[3] else q
+
+        return when (rule) {
+            InferenceRule.MODUS_PONENS -> listOf(listOf(fImplies(p, q), p))
+            InferenceRule.MODUS_TOLLENS -> listOf(listOf(fImplies(p, q), fNeg(q)))
+            InferenceRule.HYPOTHETICAL_SYLLOGISM -> listOf(listOf(fImplies(p, q), fImplies(q, r)))
+            InferenceRule.DISJUNCTIVE_SYLLOGISM -> listOf(listOf(fOr(p, q), fNeg(p)))
+            InferenceRule.CONJUNCTION -> listOf(listOf(p, q))
+            InferenceRule.SIMPLIFICATION -> listOf(listOf(fAnd(p, q)))
+            InferenceRule.ADDITION -> listOf(listOf(p))
+            InferenceRule.ABSORPTION -> listOf(listOf(fImplies(p, q)))
+            InferenceRule.CONSTRUCTIVE_DILEMMA -> listOf(listOf(fAnd(fImplies(p, q), fImplies(r, s)), fOr(p, r)))
+            else -> emptyList()
+        }
+    }
+
+    private fun formulaMatchesShape(formula: Formula, shape: FormulaShape): Boolean {
+        val node = WffParser.parse(formula) ?: return false
+        return when (shape) {
+            is FormulaShape.Any -> true
+            is FormulaShape.IsAtomic -> node is FormulaNode.VariableNode
+            is FormulaShape.IsNegation -> node is FormulaNode.UnaryOpNode && node.operator.symbol == "~"
+            is FormulaShape.IsConjunction -> node is FormulaNode.BinaryOpNode && node.operator.symbol == "&"
+            is FormulaShape.IsDisjunction -> node is FormulaNode.BinaryOpNode && node.operator.symbol == "|"
+            is FormulaShape.IsImplication -> node is FormulaNode.BinaryOpNode && node.operator.symbol == "->"
+        }
     }
 
     // This helper is needed again for the simplified findValidAssignment
@@ -535,61 +478,43 @@ class PlannedProblemGenerator {
 
 // --- Helper Classes and Functions (Moved to top level for clarity) ---
 
+
 data class VarLists(var availableVars: MutableList<Formula>, var usedVars: MutableList<Formula>) {
     companion object {
-        val allVars = ('p'..'w').toMutableList()
-            .map { Formula(listOf(LogicTile(it.toString(), SymbolType.VARIABLE))) }
-            .toList()
-
+        val allVars by lazy { ('p'..'w').map { Formula(listOf(LogicTile(it.toString(), SymbolType.VARIABLE))) } }
         fun create(): VarLists {
-            val available = allVars
-                .shuffled()
-                .toMutableList()
-            val used = mutableListOf<Formula>()
-            return VarLists(available, used)
+            return VarLists(allVars.shuffled().toMutableList(), mutableListOf())
         }
     }
 
-    fun copy(): VarLists { // Ensure deep copy
-        return VarLists(availableVars.toMutableList(), usedVars.toMutableList())
+    fun copy() = VarLists(availableVars.toMutableList(), usedVars.toMutableList())
+
+    fun commit(other: VarLists) {
+        this.availableVars = other.availableVars
+        this.usedVars = other.usedVars
     }
 
     fun useAtomicAssertion(atomicAssertion: Formula): Formula? {
         val baseVar = atomicAssertion.getBaseVariable()
         val baseVarNode = WffParser.parse(baseVar)
-
-        // Check for direct contradictions: e.g., trying to use 'p' when '~p' is already used.
         val contradiction = usedVars.find { used ->
             WffParser.parse(used.getBaseVariable()) == baseVarNode && used.normalize() != atomicAssertion.normalize()
         }
-        if (contradiction != null) return null // CONTRADICTION
-
-        // Check if this exact assertion is already used. If so, it's fine.
+        if (contradiction != null) return null
         val alreadyUsed = usedVars.any { it.normalize() == atomicAssertion.normalize() }
         if (alreadyUsed) return atomicAssertion
-
-        // If the base variable is available, use it and record the specific assertion.
         if (availableVars.contains(baseVar)) {
             availableVars.remove(baseVar)
             usedVars.add(atomicAssertion)
             return atomicAssertion
         }
-
-        // If the base variable is not available, but the assertion is not a contradiction,
-        // it means another branch used this variable in a compatible way (e.g. 'p' is used, and we need 'p').
-        // This is valid.
         val compatibleUse = usedVars.any { used -> WffParser.parse(used.getBaseVariable()) == baseVarNode }
         if(compatibleUse) return atomicAssertion
-
-        return null // Variable not available and not used in a compatible way.
+        return null
     }
 }
 
 // --- Top-level helper functions and data classes ---
-
-private fun compareFormulas(f1: Formula, f2: Formula): Boolean {
-    return f1.normalize() == f2.normalize()
-}
 
 /**
  * e.g. from "(~p & q) | r" -> ["~p", "q", "r"]
@@ -654,25 +579,7 @@ private fun Formula.isAtomicOrNegatedAtomic(): Boolean {
     return tiles.size == 2 && tiles[0].type == SymbolType.UNARY_OPERATOR && tiles[1].type == SymbolType.VARIABLE
 }
 
-/**
- * Returns a lazy sequence representing the Cartesian product of several lists,
- * avoiding high memory usage for large inputs.
- */
-fun <T> cartesianProductSequence(lists: List<List<T>>): Sequence<List<T>> {
-    if (lists.isEmpty()) {
-        return sequenceOf(emptyList())
-    }
-
-    return sequence {
-        val head = lists.first()
-        val tail = lists.drop(1)
-        val tailCartesian = cartesianProductSequence(tail)
-
-        for (item in head) {
-            for (p in tailCartesian) {
-                yield(listOf(item) + p)
-            }
-        }
-    }
+private fun compareFormulas(f1: Formula, f2: Formula): Boolean {
+    return f1.normalize() == f2.normalize()
 }
 
