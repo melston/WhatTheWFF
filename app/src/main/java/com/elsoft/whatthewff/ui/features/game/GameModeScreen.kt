@@ -4,17 +4,22 @@
 package com.elsoft.whatthewff.ui.features.game
 
 import android.os.Build
+import androidx.activity.result.launch
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.elsoft.whatthewff.logic.PlannedProblemGenerator
 import com.elsoft.whatthewff.logic.Problem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val problemGenerator: PlannedProblemGenerator = PlannedProblemGenerator()
 
@@ -31,6 +36,8 @@ fun GameModeScreen(
     onProblemGenerated: (Problem) -> Unit,
     onBackClicked: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -64,8 +71,12 @@ fun GameModeScreen(
                 onClick = {
                     // Call generate() directly on the PlannedProblemGenerator object
                     // and handle the nullable result.
-                    problemGenerator.generate(2)?.let { problem ->
-                        onProblemGenerated(problem)
+                    scope.launch(Dispatchers.Default) {
+                        problemGenerator.generate(2)?.let { problem ->
+                            withContext(Dispatchers.Main) {
+                                onProblemGenerated(problem)
+                            }
+                        }
                     }
                 }
             )
@@ -75,8 +86,12 @@ fun GameModeScreen(
                 onClick = {
                     // Call generate() directly on the PlannedProblemGenerator object
                     // and handle the nullable result.
-                    problemGenerator.generate(4)?.let { problem ->
-                        onProblemGenerated(problem)
+                    scope.launch(Dispatchers.Default) {
+                        problemGenerator.generate(4)?.let { problem ->
+                            withContext(Dispatchers.Main) {
+                                onProblemGenerated(problem)
+                            }
+                        }
                     }
                 }
             )
@@ -86,8 +101,12 @@ fun GameModeScreen(
                 onClick = {
                     // Call generate() directly on the PlannedProblemGenerator object
                     // and handle the nullable result.
-                    problemGenerator.generate(6)?.let { problem ->
-                        onProblemGenerated(problem)
+                    scope.launch(Dispatchers.Default) {
+                        problemGenerator.generate(6)?.let { problem ->
+                            withContext(Dispatchers.Main) {
+                                onProblemGenerated(problem)
+                            }
+                        }
                     }
                 }
             )

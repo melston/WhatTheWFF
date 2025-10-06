@@ -304,7 +304,7 @@ class PlannedProblemGenerator {
 
         // BASE CASE: LEAF NODE
         if (predecessorNodes.isEmpty()) {
-            val potentialFormulas = generateLeafFormulas(requiredShape, vars)
+            val potentialFormulas = generateFormulasForShape(requiredShape, vars, 5) // Generate a few options
             for (formula in potentialFormulas.shuffled()) {
                 val tempVars = vars.copy()
                 if (isConsistent(formula, tempVars)) {
@@ -319,46 +319,42 @@ class PlannedProblemGenerator {
         }
 
         // RECURSIVE STEP: INTERMEDIATE NODE
+        // This is the core logic change. Instead of generating premises and pushing them down,
+        // we solve the children according to the plan and pull their conclusions up.
         val ruleToApply = node.rule ?: return false // Should not happen in a valid plan
+        val maxAttempts = 10
+        repeat(maxAttempts) {
+            val tempVars = vars.copy()
+            val childSolutions = mutableListOf<Formula>()
+            var allChildrenSolved = true
 
-        // Generate a set of possible premise combinations this rule could use.
-        val premiseSets = generatePremiseCombinations(ruleToApply, vars)
-
-        for (premiseSet in premiseSets.shuffled()) {
-            val childPermutations = predecessorNodes.permutations()
-            for (childPermutation in childPermutations) {
-                val tempVars = vars.copy()
-                var allChildrenSolved = true
-                val childSolutions = mutableMapOf<ProofNode, Application>()
-
-                for (i in childPermutation.indices) {
-                    val childNode = childPermutation[i]
-                    val requiredPremise = premiseSet[i]
-
-                    // Pass the main tempVars to be mutated by the child solver.
-                    if (selectApplicationPath(childNode, requiredPremise, tempVars, depth + 1)) {
-                        childSolutions[childNode] = childNode.selectedApplication!!
-                        // State is now automatically carried over because `tempVars`
-                        // was modified in place.
-                    } else {
-                        allChildrenSolved = false
-                        break
-                    }
+            // For each child node defined in the plan...
+            for (childNode in predecessorNodes) {
+                // ...recursively solve it according to its own planned shape.
+                if (selectApplicationPath(childNode, childNode.conclusionConstraint,
+                                          graph, tempVars, depth + 1)) {
+                    childSolutions.add(childNode.selectedApplication!!.conclusion)
+                } else {
+                    allChildrenSolved = false
+                    break // If any child can't be solved, this attempt fails.
                 }
+            }
 
-                if (allChildrenSolved) {
-                    // All children were solved with a consistent set of premises.
-                    val finalPremises = predecessorNodes.map { childSolutions[it]!!.conclusion }
-                    val finalConclusion = InferenceRuleEngine.getPossibleConclusions(ruleToApply, finalPremises).firstOrNull()
+            if (allChildrenSolved) {
+                // All children were solved. Now, see if their conclusions can be used
+                // by this parent node to derive a valid conclusion.
+                val finalConclusion =
+                    InferenceRuleEngine.getPossibleConclusions(ruleToApply, childSolutions)
+                        .firstOrNull()
 
-                    if (finalConclusion != null && formulaMatchesShape(finalConclusion, requiredShape)) {
-                        // Success! Commit selections and state.
-                        vars.commit(tempVars)
-                        node.selectedApplication = Application(finalConclusion, ruleToApply, finalPremises)
-                        childSolutions.forEach { (childNode, app) -> childNode.selectedApplication = app }
-                        log(depth, "<- SUCCESS for [${node.id}] with conclusion '${finalConclusion}'")
-                        return true
-                    }
+                if (finalConclusion != null &&
+                    formulaMatchesShape(finalConclusion, requiredShape)) {
+                    // Success! The derived conclusion matches what this node needed.
+                    vars.commit(tempVars) // Commit the accumulated variable state from all children.
+                    node.selectedApplication = Application(finalConclusion, ruleToApply,
+                                                           childSolutions)
+                    log(depth, "<- SUCCESS for [${node.id}] with conclusion '${finalConclusion}'")
+                    return true
                 }
             }
         }
@@ -367,96 +363,15 @@ class PlannedProblemGenerator {
         return false
     }
 
-    // Overload for the recursive call that requires a specific formula
-    private fun selectApplicationPath(
-        node: ProofNode,
-        requiredConclusion: Formula,
-        vars: VarLists,
-        depth: Int
-    ): Boolean {
-        // This is a much simpler case: we just need to solve this one node to be exactly this formula.
-        // This is always a leaf in our new design.
-        log(depth, "-> selectApplicationPath for [${node.id}] seeking specific formula '${requiredConclusion}'")
-        val tempVars = vars.copy()
-        if (isConsistent(requiredConclusion, tempVars)) {
-            vars.commit(tempVars)
-            node.selectedApplication = Application(requiredConclusion,
-                                                   InferenceRule.ASSUMPTION,
-                                                   emptyList())
-            log(depth, "   Leaf node [${node.id}] success with specific formula '${requiredConclusion}'")
-            return true
-        }
-        log(depth, "   Leaf node [${node.id}] FAILED, formula '${requiredConclusion}' is inconsistent")
-        return false
-    }
-
     private fun isConsistent(formula: Formula, vars: VarLists): Boolean {
         val atoms = formula.getAtomicAssertions()
         return atoms.all { vars.useAtomicAssertion(it) != null }
     }
 
-    private fun generateLeafFormulas(shape: FormulaShape, vars: VarLists): List<Formula> {
-        val formulas = mutableListOf<Formula>()
-        val baseAvailable = vars.availableVars
-        val specificUsed = vars.usedVars
-        val allPossibleAtoms = (baseAvailable + specificUsed).distinctBy {
-            it.getBaseVariable().toString()
-        }.shuffled()
-
-        when (shape) {
-            is FormulaShape.IsImplication -> allPossibleAtoms.take(2).let {
-                if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
-            }
-            is FormulaShape.IsConjunction -> allPossibleAtoms.take(2).let {
-                if (it.size == 2) formulas.add(fAnd(it[0], it[1]))
-            }
-            is FormulaShape.IsDisjunction -> allPossibleAtoms.take(2).let {
-                if (it.size == 2) formulas.add(fOr(it[0], it[1]))
-            }
-            is FormulaShape.IsNegation -> allPossibleAtoms.firstOrNull()?.let {
-                if (WffParser.parse(it) is FormulaNode.VariableNode) formulas.add(fNeg(it))
-            }
-            else -> { // Any or IsAtomic
-                formulas.addAll(allPossibleAtoms)
-                formulas.addAll(allPossibleAtoms.mapNotNull {
-                    if (WffParser.parse(it) is FormulaNode.VariableNode) {
-                        fNeg(it)
-                    } else null
-                })
-            }
-        }
-        if (formulas.isEmpty()) { // Fallback
-            VarLists.allVars.shuffled().take(2).let {
-                if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
-            }
-        }
-        return formulas
-    }
-
-
-    private fun generatePremiseCombinations(rule: InferenceRule, vars: VarLists): List<List<Formula>> {
-        val requiredShapes = rulePremiseShapes[rule] ?: return emptyList()
-        val generatedPremiseLists = requiredShapes.map { shape ->
-            generateFormulasForShape(shape, vars, 2) // Generate a couple of options for each shape
-        }
-
-        if (generatedPremiseLists.any { it.isEmpty() }) return emptyList()
-
-        // Create cartesian product of the generated options
-        var combinations: List<List<Formula>> = listOf(emptyList())
-        for (premiseOptions in generatedPremiseLists) {
-            combinations = combinations.flatMap { combination ->
-                premiseOptions.map { option ->
-                    combination + option
-                }
-            }
-        }
-        return combinations.filter { it.size == requiredShapes.size }
-    }
-
     private fun generateFormulasForShape(shape: FormulaShape, vars: VarLists, count: Int): List<Formula> {
         val formulas = mutableListOf<Formula>()
-        val atoms = (vars.availableVars + vars.usedVars.map { it.getBaseVariable() }).distinct().shuffled()
+        val atoms = (vars.availableVars + vars.usedVars).distinct().shuffled()
+        if (atoms.isEmpty()) return emptyList()
 
         repeat(count) {
             val p = atoms.getOrNull(it % atoms.size) ?: return@repeat
@@ -467,14 +382,17 @@ class PlannedProblemGenerator {
                 FormulaShape.IsImplication -> fImplies(p, q)
                 FormulaShape.IsConjunction -> fAnd(p, q)
                 FormulaShape.IsDisjunction -> fOr(p, q)
-                FormulaShape.IsNegation -> fNeg(p)
+                FormulaShape.IsNegation -> {
+                    // Only add negation if the atom is not already negated to avoid ~~p
+                    if (WffParser.parse(p) is FormulaNode.VariableNode) fNeg(p) else p
+                }
                 FormulaShape.IsAtomic -> p
                 FormulaShape.Any -> when(Random.nextInt(5)) {
                     0 -> p
-                    1 -> fNeg(p)
+                    1 -> if (WffParser.parse(p) is FormulaNode.VariableNode) fNeg(p) else p
                     2 -> fAnd(p, q)
                     3 -> fOr(p, q)
-                    else -> fImplies(p, q)
+                    else -> fImplies(p, r)
                 }
             }
             formulas.add(formula)
