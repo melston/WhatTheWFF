@@ -3,6 +3,10 @@
 package com.elsoft.whatthewff.logic
 
 
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.not
+import com.elsoft.whatthewff.logic.AvailableTiles.or
 import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
 import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
 import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
@@ -70,7 +74,7 @@ private val ruleConclusionShapes = mapOf(
 private data class ProofPlan(
     val graph: DirectedAcyclicGraph<ProofNode, DefaultEdge>,
     val finalConclusionNode: ProofNode,
-    val initialPremiseNodes: Set<ProofNode>
+    val allNodes: Set<ProofNode>
 )
 
 /**
@@ -174,10 +178,12 @@ class PlannedProblemGenerator {
 
     private fun generatePlan(difficulty: Int): ProofPlan {
         val graph = DirectedAcyclicGraph<ProofNode, DefaultEdge>(DefaultEdge::class.java)
+        val allNodes = mutableSetOf<ProofNode>()
         val premiseNodes = mutableSetOf<ProofNode>()
 
         val finalConclusionNode = ProofNode(id = generateId())
         graph.addVertex(finalConclusionNode)
+        allNodes.add(finalConclusionNode)
 
         val goalsToSolve = mutableListOf(finalConclusionNode)
         var stepsBudget = difficulty.coerceAtLeast(1)
@@ -229,6 +235,7 @@ class PlannedProblemGenerator {
 
             newChildBlueprints.forEach { childBlueprint ->
                 graph.addVertex(childBlueprint)
+                allNodes.add(childBlueprint)
                 graph.addEdge(childBlueprint, currentNode)
             }
 
@@ -253,7 +260,7 @@ class PlannedProblemGenerator {
             graph.containsVertex(node) && graph.inDegreeOf(node) == 0
         }.toSet()
 
-        return ProofPlan(graph, finalConclusionNode, finalPremises)
+        return ProofPlan(graph, finalConclusionNode, allNodes)
     }
 
     private fun generateProblemFromPlan(plan: ProofPlan): Problem? {
@@ -266,7 +273,10 @@ class PlannedProblemGenerator {
             val finalConclusionFormula =
                 plan.finalConclusionNode.selectedApplication?.conclusion
                     ?: return null
-            val premises = plan.initialPremiseNodes
+            val premises = plan.allNodes.filter { node ->
+                    // A node is a premise if it was solved as an ASSUMPTION
+                    node.selectedApplication?.rule == InferenceRule.ASSUMPTION
+                }
                 .mapNotNull { it.selectedApplication?.conclusion }
                 .distinct()
                 .sortedBy { it.toString() }
@@ -323,14 +333,14 @@ class PlannedProblemGenerator {
                     val childNode = childPermutation[i]
                     val requiredPremise = premiseSet[i]
 
-                    // Create a sub-solver state for this child
-                    val childVars = tempVars.copy()
-                    if (selectApplicationPath(childNode, requiredPremise, childVars, depth + 1)) {
+                    // Pass the main tempVars to be mutated by the child solver.
+                    if (selectApplicationPath(childNode, requiredPremise, tempVars, depth + 1)) {
                         childSolutions[childNode] = childNode.selectedApplication!!
-                        tempVars.commit(childVars) // Commit the successful child's state
+                        // State is now automatically carried over because `tempVars`
+                        // was modified in place.
                     } else {
                         allChildrenSolved = false
-                        break // This assignment of (child, premise) failed.
+                        break
                     }
                 }
 
@@ -368,7 +378,9 @@ class PlannedProblemGenerator {
         val tempVars = vars.copy()
         if (isConsistent(requiredConclusion, tempVars)) {
             vars.commit(tempVars)
-            node.selectedApplication = Application(requiredConclusion, InferenceRule.ASSUMPTION, emptyList())
+            node.selectedApplication = Application(requiredConclusion,
+                                                   InferenceRule.ASSUMPTION,
+                                                   emptyList())
             log(depth, "   Leaf node [${node.id}] success with specific formula '${requiredConclusion}'")
             return true
         }
@@ -385,28 +397,43 @@ class PlannedProblemGenerator {
         val formulas = mutableListOf<Formula>()
         val baseAvailable = vars.availableVars
         val specificUsed = vars.usedVars
-        val allPossibleAtoms = (baseAvailable + specificUsed).distinctBy { it.getBaseVariable().toString() }.shuffled()
+        val allPossibleAtoms = (baseAvailable + specificUsed).distinctBy {
+            it.getBaseVariable().toString()
+        }.shuffled()
 
         when (shape) {
-            is FormulaShape.IsImplication -> allPossibleAtoms.take(2).let { if (it.size == 2) formulas.add(fImplies(it[0], it[1])) }
-            is FormulaShape.IsConjunction -> allPossibleAtoms.take(2).let { if (it.size == 2) formulas.add(fAnd(it[0], it[1])) }
-            is FormulaShape.IsDisjunction -> allPossibleAtoms.take(2).let { if (it.size == 2) formulas.add(fOr(it[0], it[1])) }
+            is FormulaShape.IsImplication -> allPossibleAtoms.take(2).let {
+                if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
+            }
+            is FormulaShape.IsConjunction -> allPossibleAtoms.take(2).let {
+                if (it.size == 2) formulas.add(fAnd(it[0], it[1]))
+            }
+            is FormulaShape.IsDisjunction -> allPossibleAtoms.take(2).let {
+                if (it.size == 2) formulas.add(fOr(it[0], it[1]))
+            }
             is FormulaShape.IsNegation -> allPossibleAtoms.firstOrNull()?.let {
                 if (WffParser.parse(it) is FormulaNode.VariableNode) formulas.add(fNeg(it))
             }
             else -> { // Any or IsAtomic
                 formulas.addAll(allPossibleAtoms)
-                formulas.addAll(allPossibleAtoms.mapNotNull { if (WffParser.parse(it) is FormulaNode.VariableNode) fNeg(it) else null })
+                formulas.addAll(allPossibleAtoms.mapNotNull {
+                    if (WffParser.parse(it) is FormulaNode.VariableNode) {
+                        fNeg(it)
+                    } else null
+                })
             }
         }
         if (formulas.isEmpty()) { // Fallback
-            VarLists.allVars.shuffled().take(2).let { if (it.size == 2) formulas.add(fImplies(it[0], it[1])) }
+            VarLists.allVars.shuffled().take(2).let {
+                if (it.size == 2) formulas.add(fImplies(it[0], it[1]))
+            }
         }
         return formulas
     }
 
-    private fun generatePremiseCombinations(rule: InferenceRule, shape: FormulaShape, vars: VarLists): List<List<Formula>> {
-        // This is a simplified stub. A real implementation would be more intelligent.
+    private fun generatePremiseCombinations(rule: InferenceRule, shape: FormulaShape,
+                                            vars: VarLists): List<List<Formula>> {
+        // TODO: This is a simplified stub. A real implementation would be more intelligent.
         val atoms = vars.availableVars.shuffled().take(4)
         if (atoms.size < 2) return emptyList()
 
@@ -416,15 +443,21 @@ class PlannedProblemGenerator {
         val s = if (atoms.size > 3) atoms[3] else q
 
         return when (rule) {
-            InferenceRule.MODUS_PONENS -> listOf(listOf(fImplies(p, q), p))
-            InferenceRule.MODUS_TOLLENS -> listOf(listOf(fImplies(p, q), fNeg(q)))
-            InferenceRule.HYPOTHETICAL_SYLLOGISM -> listOf(listOf(fImplies(p, q), fImplies(q, r)))
-            InferenceRule.DISJUNCTIVE_SYLLOGISM -> listOf(listOf(fOr(p, q), fNeg(p)))
+            InferenceRule.MODUS_PONENS -> listOf(listOf(fImplies(p, q),
+                                                        p))
+            InferenceRule.MODUS_TOLLENS -> listOf(listOf(fImplies(p, q),
+                                                         fNeg(q)))
+            InferenceRule.HYPOTHETICAL_SYLLOGISM -> listOf(listOf(fImplies(p, q),
+                                                                  fImplies(q, r)))
+            InferenceRule.DISJUNCTIVE_SYLLOGISM -> listOf(listOf(fOr(p, q),
+                                                                 fNeg(p)))
             InferenceRule.CONJUNCTION -> listOf(listOf(p, q))
             InferenceRule.SIMPLIFICATION -> listOf(listOf(fAnd(p, q)))
             InferenceRule.ADDITION -> listOf(listOf(p))
             InferenceRule.ABSORPTION -> listOf(listOf(fImplies(p, q)))
-            InferenceRule.CONSTRUCTIVE_DILEMMA -> listOf(listOf(fAnd(fImplies(p, q), fImplies(r, s)), fOr(p, r)))
+            InferenceRule.CONSTRUCTIVE_DILEMMA -> listOf(listOf(fAnd(fImplies(p, q),
+                                                                     fImplies(r, s)),
+                                                                fOr(p, r)))
             else -> emptyList()
         }
     }
@@ -434,10 +467,14 @@ class PlannedProblemGenerator {
         return when (shape) {
             is FormulaShape.Any -> true
             is FormulaShape.IsAtomic -> node is FormulaNode.VariableNode
-            is FormulaShape.IsNegation -> node is FormulaNode.UnaryOpNode && node.operator.symbol == "~"
-            is FormulaShape.IsConjunction -> node is FormulaNode.BinaryOpNode && node.operator.symbol == "&"
-            is FormulaShape.IsDisjunction -> node is FormulaNode.BinaryOpNode && node.operator.symbol == "|"
-            is FormulaShape.IsImplication -> node is FormulaNode.BinaryOpNode && node.operator.symbol == "->"
+            is FormulaShape.IsNegation ->
+                node is FormulaNode.UnaryOpNode && node.operator == not
+            is FormulaShape.IsConjunction ->
+                node is FormulaNode.BinaryOpNode && node.operator == and
+            is FormulaShape.IsDisjunction ->
+                node is FormulaNode.BinaryOpNode && node.operator == or
+            is FormulaShape.IsImplication ->
+                node is FormulaNode.BinaryOpNode && node.operator == implies
         }
     }
 
@@ -481,7 +518,11 @@ class PlannedProblemGenerator {
 
 data class VarLists(var availableVars: MutableList<Formula>, var usedVars: MutableList<Formula>) {
     companion object {
-        val allVars by lazy { ('p'..'w').map { Formula(listOf(LogicTile(it.toString(), SymbolType.VARIABLE))) } }
+        val allVars by lazy {
+            ('p'..'w').map {
+                Formula(listOf(LogicTile(it.toString(), SymbolType.VARIABLE)))
+            }
+        }
         fun create(): VarLists {
             return VarLists(allVars.shuffled().toMutableList(), mutableListOf())
         }
@@ -498,7 +539,8 @@ data class VarLists(var availableVars: MutableList<Formula>, var usedVars: Mutab
         val baseVar = atomicAssertion.getBaseVariable()
         val baseVarNode = WffParser.parse(baseVar)
         val contradiction = usedVars.find { used ->
-            WffParser.parse(used.getBaseVariable()) == baseVarNode && used.normalize() != atomicAssertion.normalize()
+            WffParser.parse(used.getBaseVariable()) == baseVarNode
+            && used.normalize() != atomicAssertion.normalize()
         }
         if (contradiction != null) return null
         val alreadyUsed = usedVars.any { it.normalize() == atomicAssertion.normalize() }
