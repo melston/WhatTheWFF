@@ -2,7 +2,6 @@
 
 package com.elsoft.whatthewff.logic
 
-
 import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
 import com.elsoft.whatthewff.logic.AvailableTiles.not
@@ -16,7 +15,6 @@ import org.jgrapht.Graphs
 import org.jgrapht.graph.DefaultEdge
 import org.jgrapht.graph.DirectedAcyclicGraph
 import kotlin.random.Random
-import kotlin.random.nextInt
 
 private const val debug = false
 private fun log(depth: Int, message: String) {
@@ -200,17 +198,15 @@ class PlannedProblemGenerator {
             }
 
             val currentNode = goalsToSolve.removeAt(0)
+            // TODO: Can we decrement this below the filter?
             stepsBudget-- // Decrement budget for processing this node.
 
             val applicableRules = InferenceRule.entries.filter { rule ->
                 // ***NEVER RANDOMLY CHOOSE ASSUMPTION***
-                // It is only a fallback if this list ends up empty.
                 if (rule == InferenceRule.ASSUMPTION) return@filter false
 
                 val conclusionShape = ruleConclusionShapes[rule]!!
                 val constraint = currentNode.conclusionConstraint
-                // A rule is applicable if its conclusion shape matches the
-                // constraint, or if the constraint is 'Any'.
                 val shapeOk = when (constraint) {
                     FormulaShape.Any -> true
                     else -> conclusionShape == constraint ||
@@ -230,8 +226,6 @@ class PlannedProblemGenerator {
             currentNode.rule = rule
             val premiseShapes = rulePremiseShapes[rule]!!
             val newChildBlueprints = premiseShapes.map { shape ->
-                // The child's conclusion MUST satisfy the parent's
-                // premise requirement.
                 ProofNode(id = generateId(), conclusionConstraint = shape)
             }
 
@@ -256,111 +250,140 @@ class PlannedProblemGenerator {
         }
 
         premiseNodes.addAll(goalsToSolve)
-        val finalPremises = premiseNodes.filter { node ->
-            // inDegreeOf finds the nodes that have no source nodes
-            // attached to them.
-            graph.containsVertex(node) && graph.inDegreeOf(node) == 0
-        }.toSet()
-
         return ProofPlan(graph, finalConclusionNode, allNodes)
     }
 
     private fun generateProblemFromPlan(plan: ProofPlan): Problem? {
         val vars = VarLists.create()
-        if (selectApplicationPath(plan.finalConclusionNode,
-                                  FormulaShape.Any,
-                                  plan.graph,
-                                  vars,
-                                  0)) {
-            val finalConclusionFormula =
-                plan.finalConclusionNode.selectedApplication?.conclusion
-                    ?: return null
-            val premises = plan.allNodes.filter { node ->
-                    // A node is a premise if it was solved as an ASSUMPTION
-                    node.selectedApplication?.rule == InferenceRule.ASSUMPTION
-                }
+        val solutions = findAllSolutions(plan.finalConclusionNode, plan.graph, vars, 0)
+
+        if (solutions.isNotEmpty()) {
+            val finalApplication = solutions.random()
+            // Backtrack from the selected solution to set the selectedApplication on all nodes
+            selectSolution(finalApplication, plan.allNodes)
+
+            val premises = plan.allNodes
+                .filter { it.selectedApplication?.rule == InferenceRule.ASSUMPTION }
                 .mapNotNull { it.selectedApplication?.conclusion }
                 .distinct()
                 .sortedBy { it.toString() }
 
-            return Problem("gen_${System.currentTimeMillis()}",
-                           "Generated Problem",
-                           premises,
-                           finalConclusionFormula,
-                           plan.graph.vertexSet().size)
+            return Problem(
+                "gen_${System.currentTimeMillis()}",
+                "Generated Problem",
+                premises,
+                finalApplication.conclusion,
+                plan.graph.vertexSet().size
+            )
         }
         return null
     }
 
-    private fun selectApplicationPath(
+    private fun findAllSolutions(
         node: ProofNode,
-        requiredShape: FormulaShape,
         graph: DirectedAcyclicGraph<ProofNode, DefaultEdge>,
         vars: VarLists,
         depth: Int
-    ): Boolean {
-        log(depth, "-> selectApplicationPath for [${node.id}] seeking ${requiredShape.name}")
+    ): List<Application> {
+        log(depth, "-> findAllSolutions for [${node.id}]")
+
+        // MEMOIZATION: If we've already computed this, return the cached result.
+        if (node.arePossibleApplicationsGenerated) {
+            log(depth, "<- findAllSolutions for [${node.id}] (cached)")
+            return node.possibleApplications
+        }
+
         val predecessorNodes = Graphs.predecessorListOf(graph, node)
+        val solutions = mutableListOf<Application>()
 
         // BASE CASE: LEAF NODE
         if (predecessorNodes.isEmpty()) {
-            val potentialFormulas = generateFormulasForShape(requiredShape, vars, 5) // Generate a few options
-            for (formula in potentialFormulas.shuffled()) {
+            val potentialFormulas = generateFormulasForShape(node.conclusionConstraint, vars, 10)
+            potentialFormulas.forEach { formula ->
                 val tempVars = vars.copy()
                 if (isConsistent(formula, tempVars)) {
-                    vars.commit(tempVars)
-                    node.selectedApplication = Application(formula, InferenceRule.ASSUMPTION, emptyList())
-                    log(depth, "   Leaf node [${node.id}] success with '${formula}'")
-                    return true
+                    // This solution is a leaf node.  No premises, no childApplications.
+                    solutions.add(Application(formula, InferenceRule.ASSUMPTION,
+                                              emptyList(), emptyList()))
                 }
             }
-            log(depth, "   Leaf node [${node.id}] FAILED to find consistent formula for ${requiredShape.name}")
-            return false
         }
 
         // RECURSIVE STEP: INTERMEDIATE NODE
-        // This is the core logic change. Instead of generating premises and pushing them down,
-        // we solve the children according to the plan and pull their conclusions up.
-        val ruleToApply = node.rule ?: return false // Should not happen in a valid plan
-        val maxAttempts = 10
-        repeat(maxAttempts) {
-            val tempVars = vars.copy()
-            val childSolutions = mutableListOf<Formula>()
-            var allChildrenSolved = true
+        else {
+            val ruleToApply = node.rule ?: return emptyList()
 
-            // For each child node defined in the plan...
-            for (childNode in predecessorNodes) {
-                // ...recursively solve it according to its own planned shape.
-                if (selectApplicationPath(childNode, childNode.conclusionConstraint,
-                                          graph, tempVars, depth + 1)) {
-                    childSolutions.add(childNode.selectedApplication!!.conclusion)
-                } else {
-                    allChildrenSolved = false
-                    break // If any child can't be solved, this attempt fails.
-                }
+            // 1. Recursively find all solutions for each child.
+            val childSolutionSets: List<List<Application>> = predecessorNodes.map { childNode ->
+                findAllSolutions(childNode, graph, vars, depth + 1)
             }
 
-            if (allChildrenSolved) {
-                // All children were solved. Now, see if their conclusions can be used
-                // by this parent node to derive a valid conclusion.
-                val finalConclusion =
-                    InferenceRuleEngine.getPossibleConclusions(ruleToApply, childSolutions)
-                        .firstOrNull()
+            if (childSolutionSets.any { it.isEmpty() }) return emptyList() // Dead end
 
-                if (finalConclusion != null &&
-                    formulaMatchesShape(finalConclusion, requiredShape)) {
-                    // Success! The derived conclusion matches what this node needed.
-                    vars.commit(tempVars) // Commit the accumulated variable state from all children.
-                    node.selectedApplication = Application(finalConclusion, ruleToApply,
-                                                           childSolutions)
-                    log(depth, "<- SUCCESS for [${node.id}] with conclusion '${finalConclusion}'")
-                    return true
+            // 2. Find all consistent combinations of child solutions.
+            val combinations = cartesianProduct(childSolutionSets)
+            for (combination in combinations) {
+                val combinationVars = vars.copy()
+                var combinationConsistent = true
+                val premisesForParent = mutableListOf<Formula>()
+
+                // Check for internal consistency of the combination itself
+                for (childSolution in combination) {
+                    if (!isConsistent(childSolution.conclusion, combinationVars)) {
+                        combinationConsistent = false
+                        break
+                    }
+                    premisesForParent.add(childSolution.conclusion)
+                }
+
+                if (combinationConsistent) {
+                    val possibleConclusions =
+                        InferenceRuleEngine.getPossibleConclusions(ruleToApply,
+                                                                   premisesForParent)
+                    for (conclusion in possibleConclusions) {
+                        if (formulaMatchesShape(conclusion, node.conclusionConstraint)) {
+                            // Create a new Application that contains the
+                            // combination of premises
+                            solutions.add(Application(conclusion, ruleToApply,
+                                                      premisesForParent, combination))
+                        }
+                    }
                 }
             }
         }
 
-        log(depth, "<- FAILED for [${node.id}]")
-        return false
+        // Cache the results before returning
+        node.possibleApplications.addAll(solutions.distinctBy { it.conclusion.normalize() })
+        node.arePossibleApplicationsGenerated = true
+        log(depth, "<- findAllSolutions for [${node.id}] (found ${node.possibleApplications.size} solutions)")
+        return node.possibleApplications
+    }
+
+    private fun selectSolution(solution: Application, allNodes: Set<ProofNode>) {
+        val nodeStack = ArrayDeque<Pair<Application, ProofNode?>>()
+
+        // Find the root node of this solution in the graph
+        val rootNode = allNodes.find {
+            it.rule == solution.rule && formulaMatchesShape(solution.conclusion, it.conclusionConstraint)
+        }
+        nodeStack.add(solution to rootNode)
+
+        while(nodeStack.isNotEmpty()) {
+            val (app, _) = nodeStack.removeFirst()
+
+            val nodeForApp = allNodes.find { n ->
+                (n.rule == app.rule || (app.rule == InferenceRule.ASSUMPTION && n.rule == null)) &&
+                (n.selectedApplication == null) &&
+                formulaMatchesShape(app.conclusion, n.conclusionConstraint)
+            }
+
+            if (nodeForApp != null) {
+                nodeForApp.selectedApplication = app
+                app.childApplications.forEach { childApp ->
+                    nodeStack.add(childApp to nodeForApp)
+                }
+            }
+        }
     }
 
     private fun isConsistent(formula: Formula, vars: VarLists): Boolean {
@@ -414,22 +437,6 @@ class PlannedProblemGenerator {
             is FormulaShape.IsImplication ->
                 node is FormulaNode.BinaryOpNode && node.operator == implies
         }
-    }
-
-    // This helper is needed again for the simplified findValidAssignment
-    private fun <T> List<T>.permutations(): List<List<T>> {
-        if (this.isEmpty()) return listOf(emptyList())
-        val result: MutableList<List<T>> = mutableListOf()
-        for (i in this.indices) {
-            val element = this[i]
-            val remaining = this.toMutableList()
-            remaining.removeAt(i)
-            val permsOfRest = remaining.permutations()
-            for (p in permsOfRest) {
-                result.add(listOf(element) + p)
-            }
-        }
-        return result
     }
 
     // New function to print the tree
@@ -496,6 +503,15 @@ data class VarLists(var availableVars: MutableList<Formula>, var usedVars: Mutab
 
 // --- Top-level helper functions and data classes ---
 
+fun <T> cartesianProduct(lists: List<List<T>>): List<List<T>> {
+    if (lists.isEmpty()) return listOf(emptyList())
+    var result = listOf(emptyList<T>())
+    for (list in lists) {
+        result = result.flatMap { res -> list.map { element -> res + element } }
+    }
+    return result
+}
+
 /**
  * e.g. from "(~p & q) | r" -> ["~p", "q", "r"]
  * or   from "~(p & q) | r" -> ["p", "q", "r"]
@@ -514,21 +530,16 @@ fun Formula.getAtomicAssertions(): List<Formula> {
 
     fun findParent(targetNode: FormulaNode, currentNode: FormulaNode?): FormulaNode? {
         if (currentNode == null) return null
-        when (currentNode) {
+        return when (currentNode) {
             is FormulaNode.BinaryOpNode -> {
-                if (currentNode.left == targetNode || currentNode.right == targetNode) {
-                    return currentNode
-                }
-                return findParent(targetNode, currentNode.left)
-                       ?: findParent(targetNode, currentNode.right)
+                if (currentNode.left == targetNode || currentNode.right == targetNode) currentNode
+                else findParent(targetNode, currentNode.left) ?: findParent(targetNode, currentNode.right)
             }
             is FormulaNode.UnaryOpNode -> {
-                if (currentNode.child == targetNode) {
-                    return currentNode
-                }
-                return findParent(targetNode, currentNode.child)
+                if (currentNode.child == targetNode) currentNode
+                else findParent(targetNode, currentNode.child)
             }
-            is FormulaNode.VariableNode -> return null
+            is FormulaNode.VariableNode -> null
         }
     }
 

@@ -10,9 +10,19 @@ import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
 import com.elsoft.whatthewff.logic.RuleGenerators.fOr
 import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 
+/**
+ * This class represents the application of a rule to a set of premises, generating
+ * a conclusion.  It also has a list of childApplications, which is used to trace
+ * the full proof tree.
+ *
+ * Applications instances returned by the InferenceRuleEngine will have an empty
+ * chileApplications list.
+ */
 data class Application(val conclusion: Formula,
                        val rule: InferenceRule,
-                       val premises: List<Formula>) {}
+                       val premises: List<Formula>,
+                       val childApplications: List<Application> // Added to trace the full proof tree
+) {}
 
 object InferenceRuleEngine {
 
@@ -63,7 +73,6 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveAbsorption(premises: List<Formula>): List<Application> {
-//        println("ENGINE_DEBUG: deriveAbsorption received premises: $premises")
         val conclusions = mutableListOf<Application>()
 
         premises
@@ -82,7 +91,8 @@ object InferenceRuleEngine {
                     Application(
                         fImplies(antecedent, fAnd(antecedent, consequent)),
                         InferenceRule.ABSORPTION,
-                        listOf(treeToFormula(node))
+                        listOf(treeToFormula(node)),
+                        emptyList()
                     )
                 )
             }
@@ -99,13 +109,14 @@ object InferenceRuleEngine {
      * @return A list of all possible conclusions derived from the premises.
      */
     private fun deriveAddition(premises: List<Formula>): List<Application> {
-//        println("ENGINE_DEBUG: deriveAddition received premises: $premises")
         val conclusions = mutableListOf<Application>()
         for (p in premises) {
             for (q in premises) {
                 if (p != q) {
-                    conclusions.add(Application(
-                        fOr(p, q), InferenceRule.ADDITION, listOf(p, q))
+                    conclusions.add(
+                        Application(
+                            fOr(p, q), InferenceRule.ADDITION, listOf(p), emptyList()
+                        )
                     )
                 }
             }
@@ -132,14 +143,16 @@ object InferenceRuleEngine {
                     Application(
                         fAnd(premiseList[i], premiseList[j]),
                         InferenceRule.CONJUNCTION,
-                        listOf(premiseList[i], premiseList[j])
+                        listOf(premiseList[i], premiseList[j]),
+                        emptyList()
                     )
                 )
                 conclusions.add(
                     Application(
                         fAnd(premiseList[j], premiseList[i]),
                         InferenceRule.CONJUNCTION,
-                        listOf(premiseList[j], premiseList[i])
+                        listOf(premiseList[j], premiseList[i]),
+                        emptyList()
                     )
                )
             }
@@ -229,7 +242,8 @@ object InferenceRuleEngine {
                             listOf(
                                 treeToFormula(conj),
                                 treeToFormula(dis)
-                            )
+                            ),
+                            emptyList()
                         )
                     )
                 }
@@ -269,7 +283,8 @@ object InferenceRuleEngine {
                             Application(
                                 treeToFormula(disjunct2),
                                 InferenceRule.DISJUNCTIVE_SYLLOGISM,
-                                listOf(it, treeToFormula(node))
+                                listOf(it, treeToFormula(node)),
+                                emptyList()
                             )
                         )
                     }
@@ -280,7 +295,8 @@ object InferenceRuleEngine {
                             Application(
                                 treeToFormula(disjunct1),
                                 InferenceRule.DISJUNCTIVE_SYLLOGISM,
-                                listOf(treeToFormula(node), it)
+                                listOf(treeToFormula(node), it),
+                                emptyList()
                             )
                         )
                     }
@@ -335,7 +351,8 @@ object InferenceRuleEngine {
                             fImplies(treeToFormula(node1.left),
                                      treeToFormula(node2.right)),
                             InferenceRule.HYPOTHETICAL_SYLLOGISM,
-                            listOf(formula1, formula2)
+                            listOf(formula1, formula2),
+                            emptyList()
                         )
                     )
                 }
@@ -374,7 +391,8 @@ object InferenceRuleEngine {
                             consequent,
                             InferenceRule.MODUS_PONENS,
                             listOf(treeToFormula(impl),
-                                   antecedent)
+                                   antecedent),
+                            emptyList()
                         )
                     )
                 }
@@ -413,7 +431,8 @@ object InferenceRuleEngine {
                             fNeg(treeToFormula(impl.left)),
                             InferenceRule.MODUS_TOLLENS,
                             listOf(treeToFormula(impl),
-                                   negConsequent)
+                                   negConsequent),
+                            emptyList()
                         )
                     )
                 }
@@ -449,14 +468,16 @@ object InferenceRuleEngine {
                     Application(
                         left,
                         InferenceRule.SIMPLIFICATION,
-                        listOf(treeToFormula(conj))
+                        listOf(treeToFormula(conj)),
+                        emptyList()
                     )
                 )
                 conclusions.add(
                     Application(
                         right,
                         InferenceRule.SIMPLIFICATION,
-                        listOf(treeToFormula(conj))
+                        listOf(treeToFormula(conj)),
+                        emptyList()
                     )
                 )
             }
