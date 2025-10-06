@@ -71,6 +71,19 @@ private val ruleConclusionShapes = mapOf(
     InferenceRule.ADDITION to FormulaShape.IsDisjunction
 )
 
+// Weights to encourage variety in rule selection during planning
+private val ruleWeights: Map<InferenceRule, Double> = mapOf(
+    InferenceRule.CONJUNCTION to 1.0,
+    InferenceRule.SIMPLIFICATION to 1.0,
+    InferenceRule.ADDITION to 1.0,
+    InferenceRule.MODUS_PONENS to 1.5,
+    InferenceRule.HYPOTHETICAL_SYLLOGISM to 1.5,
+    InferenceRule.MODUS_TOLLENS to 2.0,
+    InferenceRule.DISJUNCTIVE_SYLLOGISM to 2.0,
+    InferenceRule.ABSORPTION to 2.0,
+    InferenceRule.CONSTRUCTIVE_DILEMMA to 2.5
+)
+
 private data class ProofPlan(
     val graph: DirectedAcyclicGraph<ProofNode, DefaultEdge>,
     val finalConclusionNode: ProofNode,
@@ -86,6 +99,7 @@ data class ProofNode(
     var rule: InferenceRule? = null,
     var conclusionConstraint: FormulaShape = FormulaShape.Any,
     var selectedApplication: Application? = null,
+    // Memoization cache
     val possibleApplications: MutableList<Application> = mutableListOf(),
     var arePossibleApplicationsGenerated: Boolean = false
 )
@@ -143,9 +157,7 @@ class PlannedProblemGenerator {
             if (debug) printTree(plan)
 
             val problem = generateProblemFromPlan(plan)
-            if (problem == null) {
-                log(0, "***!!! Generated null problem on attempt $attempt")
-            } else {
+            if (problem != null) {
                 if (problem.premises.isNotEmpty()) {
                     val consistencyCheck =
                         problem.premises.map { it.getAtomicAssertions() }
@@ -163,12 +175,7 @@ class PlannedProblemGenerator {
                             log(0, "*** Found a valid problem on attempt $attempt")
                             return problem
                         }
-                        log(0, "***!!! Found a problem with a premise equal to the conclusion on attempt $attempt")
-                    } else {
-                        log(0, "***!!! Found a contradiction while generating problem on attempt $attempt")
                     }
-                } else {
-                    log(0, "***!!! Found a problem with no premises on attempt $attempt")
                 }
             }
         }
@@ -190,8 +197,8 @@ class PlannedProblemGenerator {
         val branchingChance = 0.3
 
         while (goalsToSolve.isNotEmpty()) {
+            // If we are out of budget, this MUST be a leaf node (an assumption)
             if (stepsBudget <= 0) {
-                // If we are out of budget, this MUST be a leaf node (an assumption)
                 premiseNodes.addAll(goalsToSolve)
                 goalsToSolve.clear() // Ensure the loop terminates
                 continue
@@ -216,7 +223,7 @@ class PlannedProblemGenerator {
                 shapeOk && budgetOk
             }
 
-            val rule = applicableRules.ifEmpty { null }?.random()
+            val rule = weightedRandom(applicableRules)
 
             if (rule == null) {
                 premiseNodes.add(currentNode)
@@ -251,6 +258,27 @@ class PlannedProblemGenerator {
 
         premiseNodes.addAll(goalsToSolve)
         return ProofPlan(graph, finalConclusionNode, allNodes)
+    }
+
+    private fun weightedRandom(rules: List<InferenceRule>): InferenceRule? {
+        if (rules.isEmpty()) return null
+
+        // Create a list of rules sorted by weight to ensure correct selection
+        val sortedRules = rules.sortedBy { ruleWeights[it] ?: 1.0 }
+        val totalRuleWeights = sortedRules.sumOf { ruleWeights[it] ?: 1.0 }
+
+        // Randomly select a rule based on the weights
+        val randomPoint = Random.nextDouble() * totalRuleWeights
+
+        var cumWeight = 0.0
+        for (rule in sortedRules) {
+            cumWeight += (ruleWeights[rule] ?: 1.0)
+            if (randomPoint < cumWeight) {
+                return rule
+            }
+        }
+
+        return sortedRules.lastOrNull() // Fallback
     }
 
     private fun generateProblemFromPlan(plan: ProofPlan): Problem? {
@@ -359,21 +387,26 @@ class PlannedProblemGenerator {
         return node.possibleApplications
     }
 
+
     private fun selectSolution(solution: Application, allNodes: Set<ProofNode>) {
         val nodeStack = ArrayDeque<Pair<Application, ProofNode?>>()
 
-        // Find the root node of this solution in the graph
+        // Find a root node for this solution that has NOT been selected yet.
         val rootNode = allNodes.find {
-            it.rule == solution.rule && formulaMatchesShape(solution.conclusion, it.conclusionConstraint)
+            it.rule == solution.rule &&
+            it.selectedApplication == null && // ***FIX***
+            formulaMatchesShape(solution.conclusion, it.conclusionConstraint)
         }
         nodeStack.add(solution to rootNode)
 
         while(nodeStack.isNotEmpty()) {
             val (app, _) = nodeStack.removeFirst()
 
+            // Find a node that matches the application's rule and shape, and crucially,
+            // has not already been assigned a solution.
             val nodeForApp = allNodes.find { n ->
                 (n.rule == app.rule || (app.rule == InferenceRule.ASSUMPTION && n.rule == null)) &&
-                (n.selectedApplication == null) &&
+                (n.selectedApplication == null) && // ***FIX***
                 formulaMatchesShape(app.conclusion, n.conclusionConstraint)
             }
 
@@ -394,17 +427,27 @@ class PlannedProblemGenerator {
     private fun generateFormulasForShape(shape: FormulaShape, vars: VarLists, count: Int): List<Formula> {
         val formulas = mutableListOf<Formula>()
         val atoms = (vars.availableVars + vars.usedVars).distinct().shuffled()
-        if (atoms.isEmpty()) return emptyList()
+        if (atoms.size < 3) return emptyList() // Need at least 3 atoms for good variety
 
-        repeat(count) {
-            val p = atoms.getOrNull(it % atoms.size) ?: return@repeat
-            val q = atoms.getOrNull((it + 1) % atoms.size) ?: return@repeat
-            val r = atoms.getOrNull((it + 2) % atoms.size) ?: return@repeat
+        repeat(count * 2) {
+            // *** THE DEFINITIVE FIX IS HERE ***
+            // Ensure p, q, and r are always distinct by taking from a shuffled list.
+            val distinctAtoms = atoms.shuffled().take(3)
+            val p = distinctAtoms[0]
+            val q = distinctAtoms[1]
+            val r = distinctAtoms[2]
 
-            val formula = when (shape) {
+            // When asked for an atomic formula, occasionally return a more complex one to increase variety
+            val actualShape = if (shape == FormulaShape.IsAtomic && Random.nextDouble() < 0.2) {
+                listOf(FormulaShape.IsDisjunction, FormulaShape.IsConjunction, FormulaShape.IsImplication).random()
+            } else {
+                shape
+            }
+
+            val formula = when (actualShape) {
                 FormulaShape.IsImplication -> fImplies(p, q)
-                FormulaShape.IsConjunction -> fAnd(p, q)
-                FormulaShape.IsDisjunction -> fOr(p, q)
+                FormulaShape.IsConjunction -> fAnd(q, r)
+                FormulaShape.IsDisjunction -> fOr(r, p)
                 FormulaShape.IsNegation -> {
                     // Only add negation if the atom is not already negated to avoid ~~p
                     if (WffParser.parse(p) is FormulaNode.VariableNode) fNeg(p) else p
@@ -420,7 +463,7 @@ class PlannedProblemGenerator {
             }
             formulas.add(formula)
         }
-        return formulas.distinct()
+        return formulas.distinct().take(count)
     }
 
     private fun formulaMatchesShape(formula: Formula, shape: FormulaShape): Boolean {
