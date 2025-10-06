@@ -15,6 +15,8 @@ import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
 import org.jgrapht.Graphs
 import org.jgrapht.graph.DefaultEdge
 import org.jgrapht.graph.DirectedAcyclicGraph
+import kotlin.random.Random
+import kotlin.random.nextInt
 
 private const val debug = false
 private fun log(depth: Int, message: String) {
@@ -320,7 +322,7 @@ class PlannedProblemGenerator {
         val ruleToApply = node.rule ?: return false // Should not happen in a valid plan
 
         // Generate a set of possible premise combinations this rule could use.
-        val premiseSets = generatePremiseCombinations(ruleToApply, requiredShape, vars)
+        val premiseSets = generatePremiseCombinations(ruleToApply, vars)
 
         for (premiseSet in premiseSets.shuffled()) {
             val childPermutations = predecessorNodes.permutations()
@@ -431,35 +433,53 @@ class PlannedProblemGenerator {
         return formulas
     }
 
-    private fun generatePremiseCombinations(rule: InferenceRule, shape: FormulaShape,
-                                            vars: VarLists): List<List<Formula>> {
-        // TODO: This is a simplified stub. A real implementation would be more intelligent.
-        val atoms = vars.availableVars.shuffled().take(4)
-        if (atoms.size < 2) return emptyList()
 
-        val p = atoms[0]
-        val q = atoms[1]
-        val r = if (atoms.size > 2) atoms[2] else p
-        val s = if (atoms.size > 3) atoms[3] else q
-
-        return when (rule) {
-            InferenceRule.MODUS_PONENS -> listOf(listOf(fImplies(p, q),
-                                                        p))
-            InferenceRule.MODUS_TOLLENS -> listOf(listOf(fImplies(p, q),
-                                                         fNeg(q)))
-            InferenceRule.HYPOTHETICAL_SYLLOGISM -> listOf(listOf(fImplies(p, q),
-                                                                  fImplies(q, r)))
-            InferenceRule.DISJUNCTIVE_SYLLOGISM -> listOf(listOf(fOr(p, q),
-                                                                 fNeg(p)))
-            InferenceRule.CONJUNCTION -> listOf(listOf(p, q))
-            InferenceRule.SIMPLIFICATION -> listOf(listOf(fAnd(p, q)))
-            InferenceRule.ADDITION -> listOf(listOf(p))
-            InferenceRule.ABSORPTION -> listOf(listOf(fImplies(p, q)))
-            InferenceRule.CONSTRUCTIVE_DILEMMA -> listOf(listOf(fAnd(fImplies(p, q),
-                                                                     fImplies(r, s)),
-                                                                fOr(p, r)))
-            else -> emptyList()
+    private fun generatePremiseCombinations(rule: InferenceRule, vars: VarLists): List<List<Formula>> {
+        val requiredShapes = rulePremiseShapes[rule] ?: return emptyList()
+        val generatedPremiseLists = requiredShapes.map { shape ->
+            generateFormulasForShape(shape, vars, 2) // Generate a couple of options for each shape
         }
+
+        if (generatedPremiseLists.any { it.isEmpty() }) return emptyList()
+
+        // Create cartesian product of the generated options
+        var combinations: List<List<Formula>> = listOf(emptyList())
+        for (premiseOptions in generatedPremiseLists) {
+            combinations = combinations.flatMap { combination ->
+                premiseOptions.map { option ->
+                    combination + option
+                }
+            }
+        }
+        return combinations.filter { it.size == requiredShapes.size }
+    }
+
+    private fun generateFormulasForShape(shape: FormulaShape, vars: VarLists, count: Int): List<Formula> {
+        val formulas = mutableListOf<Formula>()
+        val atoms = (vars.availableVars + vars.usedVars.map { it.getBaseVariable() }).distinct().shuffled()
+
+        repeat(count) {
+            val p = atoms.getOrNull(it % atoms.size) ?: return@repeat
+            val q = atoms.getOrNull((it + 1) % atoms.size) ?: return@repeat
+            val r = atoms.getOrNull((it + 2) % atoms.size) ?: return@repeat
+
+            val formula = when (shape) {
+                FormulaShape.IsImplication -> fImplies(p, q)
+                FormulaShape.IsConjunction -> fAnd(p, q)
+                FormulaShape.IsDisjunction -> fOr(p, q)
+                FormulaShape.IsNegation -> fNeg(p)
+                FormulaShape.IsAtomic -> p
+                FormulaShape.Any -> when(Random.nextInt(5)) {
+                    0 -> p
+                    1 -> fNeg(p)
+                    2 -> fAnd(p, q)
+                    3 -> fOr(p, q)
+                    else -> fImplies(p, q)
+                }
+            }
+            formulas.add(formula)
+        }
+        return formulas.distinct()
     }
 
     private fun formulaMatchesShape(formula: Formula, shape: FormulaShape): Boolean {
