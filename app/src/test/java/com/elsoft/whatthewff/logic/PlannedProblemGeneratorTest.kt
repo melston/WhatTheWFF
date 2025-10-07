@@ -23,7 +23,6 @@ class PlannedProblemGeneratorTest : LogicTestBase() {
         // We run this multiple times to get a good sample of the random generation.
         val problemGenerator = PlannedProblemGenerator()
         for (i in 1..10) {
-//            println("--- Generation Attempt $i ---")
             val problem = problemGenerator.generate(difficulty = 3)
 
             assertNotNull("Generated problem should not be null in attempt $i", problem)
@@ -31,9 +30,6 @@ class PlannedProblemGeneratorTest : LogicTestBase() {
 
             assertTrue("Problem should have premises", problem.premises.isNotEmpty())
             assertNotNull("Problem should have a conclusion", problem.conclusion)
-
-//            println("Generated Premises: ${problem.premises.joinToString { it.toString() }}")
-//            println("Generated Conclusion: ${problem.conclusion}")
 
             // Check that the set of initial premises does not contain a direct contradiction.
             // This validates that `useAtomicAssertion` is working during path selection.
@@ -56,7 +52,6 @@ class PlannedProblemGeneratorTest : LogicTestBase() {
                 "Found a conflict in attempt ${i}.",
                 hasContradiction
             )
-//            println("--- Premise consistency check passed for Attempt $i ---\n")
         }
     }
 
@@ -66,24 +61,50 @@ class PlannedProblemGeneratorTest : LogicTestBase() {
      */
     @Test
     fun `generate() generally respects difficulty`() {
+        val maxAttempts = 5
         val problemGenerator = PlannedProblemGenerator()
+
         // A more robust test would run this many times and check the average complexity.
-        val easyProblem = problemGenerator.generate(difficulty = 2)
-        val hardProblem = problemGenerator.generate(difficulty = 6)
+        var easyProblem : Problem? = null
+        var hardProblem : Problem? = null
+        var currEasyTry = 0
+        var currHardTry = 0
 
-        assertNotNull("Generated easy problem should not be null", easyProblem)
-        if (easyProblem == null) return // Or fail(), but returning stops the test here.
-        assertNotNull("Generated hard problem should not be null", hardProblem)
-        if (hardProblem == null) return // Or fail(), but returning stops the test here.
+        while (easyProblem == null && currEasyTry < maxAttempts) {
+            currEasyTry++
+            easyProblem = problemGenerator.generate(difficulty = 2)
+        }
+        while (hardProblem == null && currHardTry < maxAttempts) {
+            currHardTry++
+            hardProblem = problemGenerator.generate(difficulty = 6)
+         }
 
-        // This property is set inside the generator based on the number of proof steps (graph nodes),
-        // which is a much more reliable measure of the problem's intended difficulty than
-        // counting the symbols in the premises.
+        assertNotNull("Generated easy problem should not be null after $maxAttempts attempts",
+                      easyProblem)
+        assertNotNull("Generated hard problem should not be null after $maxAttempts attempts",
+                      hardProblem)
+
+        // The following is needed for the compiler to recognize that the generated problems
+        // are non-null
+        if (easyProblem == null || hardProblem == null) return
+
+        // This property is set inside the generator based on the number of proof steps
+        // (graph nodes) which is a much more reliable measure of the problem's intended
+        // difficulty than counting the symbols in the premises.
         val easyComplexity = easyProblem.difficulty
         val hardComplexity = hardProblem.difficulty
 
-        println("Easy problem complexity score: $easyComplexity")
-        println("Hard problem complexity score: $hardComplexity")
+        fun genExt(value: Int, singular: String, plural: String): String =
+            if (value > 1) plural else singular
+
+
+        val easyExt = genExt(currEasyTry, "pass", "passes")
+        val hardExt = genExt(currHardTry, "pass", "passes")
+        val easyStr = "$easyComplexity, generated in ${currEasyTry} $easyExt"
+        val hardStr = "$hardComplexity, generated in ${currHardTry} $hardExt"
+
+        println("Easy problem complexity score: $easyStr")
+        println("Hard problem complexity score: $hardStr")
 
         // We can't guarantee hard > easy every time, but it's a useful signal.
         assertTrue(
