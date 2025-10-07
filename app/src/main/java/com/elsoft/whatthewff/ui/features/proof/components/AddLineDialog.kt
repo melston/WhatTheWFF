@@ -185,7 +185,9 @@ fun AddLineDialog(
             Button(
                 onClick = {
                     validationError = null
-                    val formulaToUse = if (isSuggestionMode) selectedSuggestion?.formula else currentFormula
+                    val formulaToUse = if (isSuggestionMode) {
+                        selectedSuggestion?.formula
+                    } else currentFormula
 
                     if (formulaToUse == null) {
                         validationError = "Error: No formula provided or selected."
@@ -195,7 +197,9 @@ fun AddLineDialog(
                     val lineRefs = if (isSuggestionMode) {
                         selectedProofLines.map { it.lineNumber }
                     } else {
-                        referenceLinesInput.split(',').mapNotNull { it.trim().toIntOrNull() }
+                        referenceLinesInput.split(',').mapNotNull {
+                            it.trim().toIntOrNull()
+                        }
                     }
 
                     val justification = if (tabIndex == 0) {
@@ -204,7 +208,9 @@ fun AddLineDialog(
                         Justification.Replacement(selectedReplacementRule, lineRefs.firstOrNull() ?: 0)
                     }
 
-                    val tempLine = ProofLine(currentProof.lines.size + 1, formulaToUse, justification, currentDepth)
+                    val tempLine = ProofLine(currentProof.lines.size + 1,
+                                             formulaToUse, justification,
+                                             currentDepth)
                     val tempProof = currentProof.copy(lines = currentProof.lines + tempLine)
                     val result = ProofValidator.validate(tempProof)
 

@@ -37,6 +37,7 @@ class InferenceRuleEngineTest : LogicTestBase() {
     fun `test getPossibleApplications() for addition`() {
         val premises = createFormulas("p", "q")
         val conclusionP = createFormula("p | q")
+        val conclusionQ = createFormula("q | p")
         val appls = InferenceRuleEngine.getPossibleApplications(InferenceRule.ADDITION,
                                                                 premises)
         // This will produce 2 distinct Application objects:
@@ -45,15 +46,15 @@ class InferenceRuleEngineTest : LogicTestBase() {
         // Find the application that concludes "p | q"
         val appForP = appls.find { compareFormulas(it.conclusion, conclusionP) }
         Assert.assertNotNull(appForP)
-        // Check that its premise list is correct (only "p")
-        assertTrue(appForP!!.premises.size == 2)
+        assertTrue("Expected 2 premise, got ${appForP!!.premises.size}",
+                   appForP!!.premises.size == 2)
         assertTrue(compareFormulas(appForP.premises[0], premises[0]))
 
-        val appForQ = appls.find { compareFormulas(it.conclusion, conclusionP) }
+        val appForQ = appls.find { compareFormulas(it.conclusion, conclusionQ) }
         Assert.assertNotNull(appForQ)
-        // Check that its premise list is correct (only "p")
-        assertTrue(appForQ!!.premises.size == 2)
-        assertTrue(compareFormulas(appForQ.premises[0], premises[0]))
+        assertTrue("Expected 2 premises, got ${appForQ!!.premises.size}",
+                   appForQ!!.premises.size == 2)
+        assertTrue(compareFormulas(appForQ.premises[0], premises[1]))
     }
 
     // TODO:  Add more InferenceRuleEngine.getPossibleApplications() tests.

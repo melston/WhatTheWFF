@@ -156,7 +156,9 @@ object ProofValidator {
         fullProof: Proof,
         currentLine: ProofLine
     ): ValidationResult {
-        if (currentLine.depth != fullProof.lines.getOrNull(justification.subproofStart - 2)?.depth ?: 0) {
+        if (currentLine.depth !=
+            (fullProof.lines.getOrNull(justification.subproofStart - 2)?.depth ?: 0)
+        ) {
             val msg =
                 "Implication Introduction must end the sub-proof at the correct indentation level."
             return ValidationResult(false, msg)
@@ -207,7 +209,9 @@ object ProofValidator {
         fullProof: Proof,
         currentLine: ProofLine
     ): ValidationResult {
-        if (currentLine.depth != fullProof.lines.getOrNull(justification.subproofStart - 2)?.depth ?: 0) {
+        if (currentLine.depth !=
+            (fullProof.lines.getOrNull(justification.subproofStart - 2)?.depth ?: 0)
+        ) {
             val msg = "RAA must end the sub-proof at the correct indentation level."
             return ValidationResult(false, msg)
         }
@@ -296,7 +300,6 @@ object ProofValidator {
             }
         }
 
-        // --- KEY CHANGE: All logic is now deferred to the central engine ---
         val refFormulas =
             justification.lineReferences
                 .mapNotNull { provenTrees[it] }

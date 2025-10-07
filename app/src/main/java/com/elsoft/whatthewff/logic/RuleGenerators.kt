@@ -6,6 +6,7 @@ package com.elsoft.whatthewff.logic
 
 import com.elsoft.whatthewff.logic.AvailableTiles.and
 import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.not
 import com.elsoft.whatthewff.logic.AvailableTiles.or
 import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
 import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
@@ -17,37 +18,49 @@ import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
  * This object contains the specific strategies for building complex goals.
  */
 object RuleGenerators {
+
     /**
      * A function that takes two formulas (P, Q) and combines them into a conjunction (P ∧ Q).
+     * It builds a node tree and uses treeToFormula to ensure correct parenthesization.
      */
-    fun fAnd(f1: Formula, f2: Formula) = Formula(
-        listOf(AvailableTiles.leftParen) +
-        f1.tiles + listOf(and) + f2.tiles +
-        listOf(AvailableTiles.rightParen)
-    )
+    fun fAnd(left: Formula, right: Formula): Formula {
+        val leftNode = WffParser.parse(left) ?: return Formula(emptyList())
+        val rightNode = WffParser.parse(right) ?: return Formula(emptyList())
+        val andNode = FormulaNode.BinaryOpNode(and, leftNode, rightNode)
+        return treeToFormula(andNode)
+    }
 
     /**
      * A function that takes two formulas (P, Q) and combines them into a disjunction (P ∨ Q).
+     * It builds a node tree and uses treeToFormula to ensure correct parenthesization.
      */
-    fun fOr(f1: Formula, f2: Formula) = Formula(
-        listOf(AvailableTiles.leftParen) +
-        f1.tiles + listOf(or) + f2.tiles +
-        listOf(AvailableTiles.rightParen)
-    )
+    fun fOr(left: Formula, right: Formula): Formula {
+        val leftNode = WffParser.parse(left) ?: return Formula(emptyList())
+        val rightNode = WffParser.parse(right) ?: return Formula(emptyList())
+        val orNode = FormulaNode.BinaryOpNode(or, leftNode, rightNode)
+        return treeToFormula(orNode)
+    }
 
     /**
      * A function that takes two formulas (P, Q) and combines them into an implication (P → Q).
+     * It builds a node tree and uses treeToFormula to ensure correct parenthesization.
      */
-    fun fImplies(f1: Formula, f2: Formula) = Formula(
-        listOf(AvailableTiles.leftParen) +
-        f1.tiles + listOf(implies) + f2.tiles +
-        listOf(AvailableTiles.rightParen)
-    )
+    fun fImplies(left: Formula, right: Formula): Formula {
+        val leftNode = WffParser.parse(left) ?: return Formula(emptyList())
+        val rightNode = WffParser.parse(right) ?: return Formula(emptyList())
+        val impliesNode = FormulaNode.BinaryOpNode(implies, leftNode, rightNode)
+        return treeToFormula(impliesNode)
+    }
 
     /**
      * A function that takes one formula (P) and creates its negation (¬P).
+     * It builds a node tree and uses treeToFormula to ensure correct parenthesization.
      */
-    fun fNeg(f1: Formula) = Formula(listOf(AvailableTiles.not) + f1.tiles)
+    fun fNeg(f1: Formula): Formula {
+        val childNode = WffParser.parse(f1) ?: return Formula(emptyList())
+        val negNode = FormulaNode.UnaryOpNode(not, childNode)
+        return treeToFormula(negNode)
+    }
 
     /**
      * Converts a FormulaNode to a Formula.
@@ -60,7 +73,7 @@ object RuleGenerators {
                 AvailableTiles.iff -> 1
                 implies -> 2
                 or -> 3
-                and -> 4
+                and ->3
                 else -> 0 // Handles null or any other tile (or null)
             }
         }

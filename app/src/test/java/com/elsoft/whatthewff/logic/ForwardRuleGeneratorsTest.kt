@@ -27,18 +27,21 @@ class ForwardRuleGeneratorsTest {
     @Test
     fun `conjunction generates a valid conjunction`() {
         val known = listOf(f("p"), f("q"))
+        // The result could be (p∧q) or (q∧p)
+        val possibleOutcomes = setOf("p∧q", "q∧p")
+            .map { WffParser.parseFormulaFromString(it) }
+
         val steps = ForwardRuleGenerators.conjunction.generate(known)
         assertNotNull("Generate should produce a step", steps)
+
         steps?.forEach { step ->
             assertEquals(
                 "Justification should be Conj.",
                 "Conj.", step.justification
             )
-            // The result could be (p∧q) or (q∧p)
-            val possibleOutcomes = setOf("(p∧q)", "(q∧p)")
             assertTrue(
-                "Result formula is not a valid conjunction",
-                possibleOutcomes.contains(step.formula.stringValue)
+                "Result formula is not one of our possible conjunctions",
+                possibleOutcomes.contains(step.formula)
             )
         }
     }
@@ -122,8 +125,8 @@ class ForwardRuleGeneratorsTest {
                 "HS", step.justification
             )
             assertEquals(
-                "Result should be the chained implication '(p→r)'",
-                "(p→r)", step.formula.stringValue
+                "Result should be the chained implication 'p→r'",
+                "p→r", step.formula.stringValue
             )
         }
     }
@@ -202,7 +205,7 @@ class ForwardRuleGeneratorsTest {
         val steps = ForwardRuleGenerators.addition.generate(known)
         assertNotNull("Generate should produce a step", steps)
         assertTrue("Generate should produce two possible steps", steps!!.size == 2)
-        val possibleOutcomes = setOf("(p∨q)", "(q∨p)")
+        val possibleOutcomes = setOf("p∨q", "q∨p")
         steps.forEach { step ->
             assertTrue(
                 "Result formula is not a valid disjunction",

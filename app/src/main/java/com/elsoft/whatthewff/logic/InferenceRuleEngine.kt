@@ -50,14 +50,11 @@ object InferenceRuleEngine {
 
     // --- Public-facing function for the Validator ---
     fun isValidInference(rule: InferenceRule, premises: List<Formula>, conclusion: Formula): Boolean {
-        // A simple way to validate is to see if the conclusion is in the list of possible derivations.
-        val conclusionNode = WffParser.parse(conclusion)
-
         // A simple way to validate is to see if the conclusion's logical structure
         // is present in the list of possible derived structures.
-        return getPossibleConclusions(rule, premises)
-            .mapNotNull { WffParser.parse(it) }
-            .any { it == conclusionNode }
+        val poss = getPossibleConclusions(rule, premises)
+        return poss
+            .any { it.normalize() == conclusion.normalize() }
     }
 
     // --- Core Logic Implementations for each rule ---
@@ -115,7 +112,7 @@ object InferenceRuleEngine {
                 if (p != q) {
                     conclusions.add(
                         Application(
-                            fOr(p, q), InferenceRule.ADDITION, listOf(p), emptyList()
+                            fOr(p, q), InferenceRule.ADDITION, listOf(p, q), emptyList()
                         )
                     )
                 }
