@@ -4,6 +4,9 @@
 
 package com.elsoft.whatthewff.logic
 
+import com.elsoft.whatthewff.logic.AvailableTiles.and
+import com.elsoft.whatthewff.logic.AvailableTiles.implies
+import com.elsoft.whatthewff.logic.AvailableTiles.or
 import com.elsoft.whatthewff.logic.RuleGenerators.fAnd
 import com.elsoft.whatthewff.logic.RuleGenerators.fImplies
 import com.elsoft.whatthewff.logic.RuleGenerators.fNeg
@@ -22,11 +25,252 @@ data class Application(val conclusion: Formula,
                        val rule: InferenceRule,
                        val premises: List<Formula>,
                        val childApplications: List<Application> // Added to trace the full proof tree
-) {}
+)
 
 object InferenceRuleEngine {
 
     // --- Public-facing function for the problem generator ---
+    /**
+     * Function for the top-down solver.
+     * Given a rule and a target conclusion, what are the possible sets of premises?
+     */
+    fun getPremiseSetsForConclusion(rule: InferenceRule, conclusion: Formula,
+                                    vars: VarLists): List<List<Formula>> {
+        val conclusionNode = WffParser.parse(conclusion) ?: return emptyList()
+        val rv: MutableList<List<Formula>> = mutableListOf()
+
+        when (rule) {
+            InferenceRule.ASSUMPTION -> {}
+            InferenceRule.ABSORPTION -> {
+                if (conclusionNode is FormulaNode.BinaryOpNode &&
+                    conclusionNode.operator == implies &&
+                    conclusionNode.right is FormulaNode.BinaryOpNode&&
+                    conclusionNode.right.operator == and) {
+                    // If conclusion is p->(p&q), we need a premise p->q
+                    // So we get 'q' from 'vars'
+
+                    // The antecedent of the main implication. This is 'p'.
+                    val p = treeToFormula(conclusionNode.left)
+
+                    // The two parts of the inner conjunction.
+                    val conjunct1 = treeToFormula(conclusionNode.right.left)
+                    val conjunct2 = treeToFormula(conclusionNode.right.right)
+
+                    // Check if both of the conjuncts are 'p'.
+                    if ((compareFormulas(p, conjunct1) &&
+                        compareFormulas(p, conjunct2)) ||
+                        compareFormulas(p, fNeg(conjunct1)) || // contradiction
+                        compareFormulas(p, fNeg(conjunct2))) { // contradiction
+                        // This is the p->(p&p) case. Do nothing.
+                    } else {
+                        // Otherwise, find the one that is NOT p, and that's our q.
+                        // If neither one is 'p' then we do nothing.
+                        when {
+                            // Case 1: The conjunction is (p & q)
+                            compareFormulas(p, conjunct1) -> {
+                                val q = conjunct2 // This is 'q'
+                                rv.add(listOf(fImplies(p, q)))
+                            }
+                            // Case 2: The conjunction is (q & p)
+                            compareFormulas(p, conjunct2) -> {
+                                val q = conjunct1 // This is 'q'
+                                rv.add(listOf(fImplies(p, q)))
+                            }
+                        }
+                    }
+                }
+            }
+            InferenceRule.ADDITION -> {
+                if (conclusionNode is FormulaNode.BinaryOpNode &&
+                    conclusionNode.operator == and) {
+                    val p = treeToFormula(conclusionNode.left)
+                    val q = treeToFormula(conclusionNode.right)
+                    rv.add(listOf(p, q))
+                    rv.add(listOf(q, p))
+                }
+            }
+            InferenceRule.CONJUNCTION -> {
+                // Make sure that we don't have a situation where we wind up with
+                // 'p & p & p, ...'
+                if (conclusionNode is FormulaNode.BinaryOpNode &&
+                    conclusionNode.operator == and) {
+                    // If the conclusion is p & q, the premises are [p, q] or
+                    // [q, p].val p = treeToFormula(conclusionNode.left)
+                    val p = treeToFormula(conclusionNode.left)
+                    val q = treeToFormula(conclusionNode.right)
+
+                    if (!compareFormulas(p, q) && !compareFormulas(p, fNeg(q))) {
+                        rv.add(listOf(p, q))
+                        rv.add(listOf(q, p))
+                    }
+                    // If they are the same then do nothing!!
+                }
+            }
+            InferenceRule.CONSTRUCTIVE_DILEMMA -> {
+                // If conclusion is (q v s), premises would be ((p -> q) & (r -> s))
+                // and (p v r)
+                if (conclusionNode is FormulaNode.BinaryOpNode &&
+                    conclusionNode.operator == or) {
+                    val q = treeToFormula(conclusionNode.left)
+                    val s = treeToFormula(conclusionNode.right)
+
+                    // Get a list of all variables we can possibly use.
+                    val availableAtoms = (vars.availableVars + vars.usedVars).distinct()
+
+                    // Use nested loops to get all unique pairs of atoms for 'p' and 'r'.
+                    // This is equivalent to a cartesian product on the available variables.
+                    for (p in availableAtoms) {
+                        for (r in availableAtoms) {
+                            // Ensure we don't pick the same atom for both p and r.
+                            if (p == r) continue
+
+                            // Prevent tautologies (p->p)
+                            if (compareFormulas(p, q) || compareFormulas(r, s)) {
+                                continue
+                            }
+                            // Prevent nonsensical implications like (¬q → q).
+                            if (compareFormulas(p, fNeg(q)) ||
+                                compareFormulas(r, fNeg(s))) {
+                                continue
+                            }
+                            // Construct the two premises from our invented p and r,
+                            // and the q and s from the conclusion.
+                            val premise1 = fAnd(fImplies(p, q), fImplies(r, s))
+                            val premise2 = fOr(p, r)
+
+                            // Add both orderings for the solver.
+                            rv.add(listOf(premise1, premise2))
+                            rv.add(listOf(premise2, premise1))
+                        }
+                    }                }
+            }
+            InferenceRule.DISJUNCTIVE_SYLLOGISM -> {
+                // If conclusion is q, premises would be p | q and ~p
+                (vars.availableVars + vars.usedVars)
+                    .filter { it != conclusion}
+                    .forEach { p ->
+                        rv.add(listOf(fOr(p, conclusion), fNeg(p)))
+                        rv.add(listOf(fNeg(p), fOr(p, conclusion)))
+                    }
+            }
+            InferenceRule.HYPOTHETICAL_SYLLOGISM -> {
+                if (conclusionNode is FormulaNode.BinaryOpNode &&
+                    conclusionNode.operator == implies) {
+                    // If conclusion is p->r, we need premises p->q and q->r
+                    // So we get 'q' from 'vars'
+                    val p = treeToFormula(conclusionNode.left)
+                    val r = treeToFormula(conclusionNode.right)
+                    (vars.availableVars + vars.usedVars)
+                        .filter { it != p && it != r }
+                        .forEach { q ->
+                            // Prevent tautological (p->p) or contradictory premises.
+                            if (!compareFormulas(p, q) &&       // p != q (tautology)
+                                !compareFormulas(q, r) &&       // q != r (tautology)
+                                !compareFormulas(p, fNeg(q)) && // p != ~q (contradiction)
+                                !compareFormulas(q, fNeg(r))    // q != ~r (contradiction)
+                                ) {
+                                rv.add(listOf(fImplies(p, q), fImplies(q, r)))
+                            }
+                        }
+                }
+            }
+            InferenceRule.MODUS_PONENS -> {
+                // If conclusion is q, premises would be p->q and p
+                (vars.availableVars + vars.usedVars)
+                    .filter { it != conclusion}
+                    .forEach { p ->
+                        // Prevent inventing a premise 'p' that is already a part of
+                        // the conclusion 'q'.
+                        // This avoids generating redundant premises like t -> (t -> q).
+                        val conclusionAtoms = conclusion.getAtomicAssertions()
+                        if (conclusionAtoms.contains(p)) return@forEach
+
+                        // Prevent tautological (p->p) or contradictory premises.
+                        if (!compareFormulas(p, conclusion) &&    // p != q (tautology)
+                            !compareFormulas(p, fNeg(conclusion)) // p != ~q (contradiction)
+                        ) {
+                            rv.add(listOf(fImplies(p, conclusion), p))
+                            rv.add(listOf(p, fImplies(p, conclusion)))
+                        }
+                    }
+            }
+            InferenceRule.MODUS_TOLLENS -> {
+                // If conclusion is p, premises would be ~q and ~p->q
+                (vars.availableVars + vars.usedVars)
+                    .filter { it != conclusion}
+                    .forEach { q ->
+                        // Prevent tautological (p->p) or contradictory premises.
+                        if (!compareFormulas(q, conclusion) &&    // p != q (tautology)
+                            !compareFormulas(q, fNeg(conclusion)) // p != ~q (contradiction)
+                        ) {
+                            rv.add(listOf(fNeg(q), fImplies(fNeg(conclusion), q)))
+                            rv.add(listOf(fImplies(fNeg(conclusion), q), fNeg(q)))
+                        }
+                    }
+            }
+            InferenceRule.SIMPLIFICATION -> {
+                // If conclusion is p, premise could be p&q, p&r, etc.
+                (vars.availableVars + vars.usedVars)
+                    .filter { it != conclusion}
+                    .forEach { q ->
+                        rv.add(listOf(fAnd(conclusion, q)))
+                    }
+            }
+        }
+        return rv
+    }
+
+    /**
+     * New function for the top-down solver.
+     * Generates potential sets of concrete premises for a given rule.
+     */
+    fun getPossiblePremises(rule: InferenceRule, vars: VarLists): List<Application> {
+        val atoms = (vars.availableVars + vars.usedVars).distinct().shuffled()
+        if (atoms.size < 4) return emptyList()
+
+        val p = atoms[0]
+        val q = atoms[1]
+        val r = atoms[2]
+        val s = atoms[3]
+
+        return when (rule) {
+            InferenceRule.MODUS_PONENS ->
+                listOf(Application(q, rule,
+                                   listOf(fImplies(p, q), p), emptyList()))
+            InferenceRule.MODUS_TOLLENS ->
+                listOf(Application(fNeg(p), rule,
+                                   listOf(fImplies(p, q), fNeg(q)), emptyList()))
+            InferenceRule.HYPOTHETICAL_SYLLOGISM ->
+                listOf(Application(fImplies(p,r), rule,
+                                   listOf(fImplies(p, q), fImplies(q, r)), emptyList()))
+            InferenceRule.DISJUNCTIVE_SYLLOGISM ->
+                listOf(Application(q, rule,
+                                   listOf(fOr(p, q), fNeg(p)), emptyList()))
+            InferenceRule.CONSTRUCTIVE_DILEMMA ->
+                listOf(Application(fOr(q,s), rule,
+                                   listOf(fAnd(fImplies(p, q), fImplies(r, s)),
+                                          fOr(p, r)), emptyList()))
+            InferenceRule.SIMPLIFICATION ->
+                listOf(Application(p, rule,
+                                   listOf(fAnd(p, q)), emptyList()))
+            InferenceRule.CONJUNCTION ->
+                listOf(Application(fAnd(p,q), rule,
+                                   listOf(p, q), emptyList()))
+            InferenceRule.ADDITION ->
+                listOf(Application(fOr(p,q), rule,
+                                   listOf(p), emptyList()))
+            InferenceRule.ABSORPTION ->
+                listOf(Application(fImplies(p, fAnd(p,q)), rule,
+                                   listOf(fImplies(p,q)), emptyList()))
+            else -> emptyList()
+        }
+    }
+
+    // --- Public-facing function for the Suggester ---
+    fun getPossibleConclusions(rule: InferenceRule, premises: List<Formula>): List<Formula> {
+        return getPossibleApplications(rule, premises).map { it.conclusion }
+    }
+
     fun getPossibleApplications(rule: InferenceRule, premises: List<Formula>): List<Application> {
         return when (rule) {
             InferenceRule.ASSUMPTION -> emptyList()
@@ -41,11 +285,6 @@ object InferenceRuleEngine {
             InferenceRule.SIMPLIFICATION -> deriveSimplification(premises)
             // ... add other rules here as they are implemented ...
         }
-    }
-
-    // --- Public-facing function for the Suggester ---
-    fun getPossibleConclusions(rule: InferenceRule, premises: List<Formula>): List<Formula> {
-        return getPossibleApplications(rule, premises).map { it.conclusion }
     }
 
     // --- Public-facing function for the Validator ---
@@ -75,7 +314,7 @@ object InferenceRuleEngine {
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                if (node is FormulaNode.BinaryOpNode && node.operator == implies) {
                     node
                 } else {
                     null
@@ -136,22 +375,25 @@ object InferenceRuleEngine {
         val premiseList = premises.toList()
         for (i in premiseList.indices) {
             for (j in i + 1 until premiseList.size) {
-                conclusions.add(
-                    Application(
-                        fAnd(premiseList[i], premiseList[j]),
-                        InferenceRule.CONJUNCTION,
-                        listOf(premiseList[i], premiseList[j]),
-                        emptyList()
+                // Ensure that the premises being combined are not logically identical.
+                if (!compareFormulas(premiseList[i], premiseList[j])) {
+                    conclusions.add(
+                        Application(
+                            fAnd(premiseList[i], premiseList[j]),
+                            InferenceRule.CONJUNCTION,
+                            listOf(premiseList[i], premiseList[j]),
+                            emptyList()
+                        )
                     )
-                )
-                conclusions.add(
-                    Application(
-                        fAnd(premiseList[j], premiseList[i]),
-                        InferenceRule.CONJUNCTION,
-                        listOf(premiseList[j], premiseList[i]),
-                        emptyList()
+                    conclusions.add(
+                        Application(
+                            fAnd(premiseList[j], premiseList[i]),
+                            InferenceRule.CONJUNCTION,
+                            listOf(premiseList[j], premiseList[i]),
+                            emptyList()
+                        )
                     )
-               )
+                }
             }
         }
 //        println("ENGINE_DEBUG:           returns: ${conclusions.distinct()}")
@@ -172,11 +414,11 @@ object InferenceRuleEngine {
         // Gather all conjunctions of implications
         val allConjunctions = premises.filter { f ->
             WffParser.parse(f)?.let { node ->
-                node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and &&
+                node is FormulaNode.BinaryOpNode && node.operator == and &&
                 node.left is FormulaNode.BinaryOpNode &&
-                node.left.operator == AvailableTiles.implies &&
+                node.left.operator == implies &&
                 node.right is FormulaNode.BinaryOpNode &&
-                node.right.operator == AvailableTiles.implies
+                node.right.operator == implies
             } ?: false
         }.map { conj ->
             val node = WffParser.parse(conj)!! as FormulaNode.BinaryOpNode
@@ -189,14 +431,14 @@ object InferenceRuleEngine {
             WffParser.parse(f)?.let { node ->
                 when {
                     // Case A: Standalone implication (P -> Q)
-                    node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies ->
+                    node is FormulaNode.BinaryOpNode && node.operator == implies ->
                         listOf(node)
                     // Case B: Conjunction of implications ((P->Q) & (R->S))
-                    node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and &&
+                    node is FormulaNode.BinaryOpNode && node.operator == and &&
                     node.left is FormulaNode.BinaryOpNode &&
-                    node.left.operator == AvailableTiles.implies &&
+                    node.left.operator == implies &&
                     node.right is FormulaNode.BinaryOpNode &&
-                    node.right.operator == AvailableTiles.implies ->
+                    node.right.operator == implies ->
                         listOf(node.left, node.right)
                     else -> emptyList()
                 }
@@ -206,7 +448,7 @@ object InferenceRuleEngine {
         // 2. Gather all available disjunctions.
         val disjunctions = premises.mapNotNull { f ->
             WffParser.parse(f)?.let {
-                if (it is FormulaNode.BinaryOpNode && it.operator == AvailableTiles.or) it
+                if (it is FormulaNode.BinaryOpNode && it.operator == or) it
                 else null
             }
         }
@@ -264,7 +506,7 @@ object InferenceRuleEngine {
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.or) {
+                if (node is FormulaNode.BinaryOpNode && node.operator == or) {
                     node
                 } else {
                     null
@@ -318,7 +560,7 @@ object InferenceRuleEngine {
             .mapNotNull { formula ->
                 // Try to parse, return null if not a BinaryOpNode or not an implication
                 val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                if (node is FormulaNode.BinaryOpNode && node.operator == implies) {
                     // Keep the original formula along with its parsed node for easier access
                     // Kotlin knows that node is a BinaryOpNode so the type of the pair is
                     // Pair<Formula, FormulaNode.BinaryOpNode>
@@ -373,7 +615,7 @@ object InferenceRuleEngine {
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                if (node is FormulaNode.BinaryOpNode && node.operator == implies) {
                     node
                 } else {
                     null
@@ -413,7 +655,7 @@ object InferenceRuleEngine {
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.implies) {
+                if (node is FormulaNode.BinaryOpNode && node.operator == implies) {
                     node
                 } else {
                     null
@@ -452,7 +694,7 @@ object InferenceRuleEngine {
         premises
             .mapNotNull { formula ->
                 val node = WffParser.parse(formula)
-                if (node is FormulaNode.BinaryOpNode && node.operator == AvailableTiles.and) {
+                if (node is FormulaNode.BinaryOpNode && node.operator == and) {
                     node
                 } else {
                     null

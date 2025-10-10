@@ -22,7 +22,8 @@ data class Problem(
     val name: String,
     val premises: List<Formula>,
     val conclusion: Formula,
-    val difficulty: Int
+    val difficulty: Int,
+    val rootApplication: Application? = null
 )
 
 /**

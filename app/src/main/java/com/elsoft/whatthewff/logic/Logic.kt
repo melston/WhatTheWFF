@@ -1,7 +1,5 @@
 package com.elsoft.whatthewff.logic
 
-import com.elsoft.whatthewff.logic.RuleGenerators.treeToFormula
-
 // File: Logic.kt
 // This file will contain the core data models for our symbolic logic engine.
 
@@ -46,16 +44,24 @@ data class Formula(val tiles: List<LogicTile>) {
     val stringValue: String
         get() = tiles.joinToString(separator = "") { it.symbol }
 
-    fun getUniqueVars(): List<Formula> {
-        return tiles
-            .filter { it.type == SymbolType.VARIABLE }
-            .distinct()
-            .map { Formula(listOf(it)) }
-    }
-
     override fun toString(): String {
         return stringValue
     }
+}
+
+fun compareFormulas(f1: Formula, f2: Formula): Boolean {
+    return f1.normalize() == f2.normalize()
+}
+
+// Add a helper extension function to Formula
+fun Formula.contains(other: Formula): Boolean {
+    // A formula cannot contain another formula if it's shorter
+    if (this.tiles.size < other.tiles.size) return false
+    // A formula contains itself, but we check for i != j earlier.
+    if (this.normalize() == other.normalize()) return false
+
+    // A simple string check on the normalized form is a robust way to check for sub-formulas
+    return this.normalize().toString().contains(other.normalize().toString())
 }
 
 /**
@@ -78,7 +84,7 @@ object AvailableTiles {
     val problemVariables = allVariables.filter { it.symbol in "p".."w" }
 
     // The following is used as a fallback in a couple of instances
-    val p = allVariables.filter { it.symbol == "p" }.first()
+    val p = allVariables.first { it.symbol == "p" }
 
     // Operators
     val not = LogicTile("¬", SymbolType.UNARY_OPERATOR)
@@ -200,4 +206,3 @@ data class ProofLine(
  * @property lines The ordered list of lines that make up the proof.
  */
 data class Proof(val lines: List<ProofLine>)
-

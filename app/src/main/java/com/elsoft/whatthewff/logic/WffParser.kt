@@ -150,8 +150,8 @@ object WffParser {
  * Normalizes a Formula by parsing it into a syntax tree and then regenerating it.
  * This removes cosmetic differences like extra parentheses, ensuring a canonical representation.
  */
-fun Formula.normalize(): Formula? {
-    val node = WffParser.parse(this) ?: return null
+fun Formula.normalize(): Formula {
+    val node = WffParser.parse(this) ?: return Formula(emptyList())
     return treeToFormula(node)
 }
 
