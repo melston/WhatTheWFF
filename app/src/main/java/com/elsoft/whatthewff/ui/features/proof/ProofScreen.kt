@@ -13,6 +13,7 @@ import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -179,6 +180,13 @@ fun ProofScreen(
             }
         }
     )
+
+    // Intercept the back gesture and call the onBackClicked lambda,
+    // which tells MainActivity to switch the state back to AppScreen.Main.
+    BackHandler {
+        // Prevent going back while a problem is being generated.
+        onBackClicked()
+    }
 
     // --- UI Structure ---
     DragAndDropContainer {

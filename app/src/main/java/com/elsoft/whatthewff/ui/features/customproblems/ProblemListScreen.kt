@@ -4,6 +4,7 @@
 package com.elsoft.whatthewff.ui.features.customproblems
 
 import android.app.Application
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +56,13 @@ fun ProblemListScreen(
     )
     val problems by vm.problems.collectAsState()
 
+    // Intercept the back gesture and call the onBackClicked lambda,
+    // which tells MainActivity to switch the state back to AppScreen.Main.
+    BackHandler {
+        // Prevent going back while a problem is being generated.
+        onBackPressed()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -67,7 +75,9 @@ fun ProblemListScreen(
             )
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
+        LazyColumn(modifier = Modifier
+            .padding(padding)
+            .padding(16.dp)) {
             items(problems) { customProblem ->
                 ProblemItem(
                     problem = customProblem,

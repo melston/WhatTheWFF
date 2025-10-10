@@ -23,7 +23,8 @@ import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
 @Composable
 fun MainScreen(
     onPracticeClicked: () -> Unit,
-    onGameClicked: () -> Unit
+    onGameClicked: () -> Unit,
+    onHelpClicked: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -73,6 +74,24 @@ fun MainScreen(
                 )
             }
         }
+
+        // Help Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .clickable(onClick = onHelpClicked),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Help", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Get help with using the application to solve problems and learn more about the rules of inference.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
     }
 }
 
@@ -80,6 +99,6 @@ fun MainScreen(
 @Composable
 fun MainScreenPreview() {
     WhatTheWFFTheme {
-        MainScreen(onPracticeClicked = {}, onGameClicked = {})
+        MainScreen(onPracticeClicked = {}, onGameClicked = {}, onHelpClicked = {})
     }
 }

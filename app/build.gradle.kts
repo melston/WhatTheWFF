@@ -60,10 +60,12 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.jgrapht.core)
+    implementation(libs.markdown)
 
     // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.navigation.compose)
     ksp(libs.androidx.room.compiler) // <-- Note: uses 'ksp'
 
     // Gson for Type Converters

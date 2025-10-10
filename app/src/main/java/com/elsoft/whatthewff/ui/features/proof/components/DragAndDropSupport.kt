@@ -30,7 +30,7 @@ class DragAndDropState {
 
 @Composable
 fun DraggableItem(
-    modifier: Modifier = Modifier.Companion,
+    modifier: Modifier = Modifier,
     dataToDrop: DragData,
     content: @Composable () -> Unit,
     state: DragAndDropState

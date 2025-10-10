@@ -10,6 +10,7 @@ sealed class Screen {
     object Main : Screen()
     object GameModeSelect : Screen()
     object ProblemSetBrowser : Screen()
+    object Help : Screen()
     data class ProblemList(val setTitle: String) : Screen()
     data class Proof(val problem: Problem, val setTitle: String,
                      val initialProof: com.elsoft.whatthewff.logic.Proof?) : Screen()

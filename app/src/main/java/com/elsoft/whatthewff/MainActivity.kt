@@ -20,9 +20,11 @@ import com.elsoft.whatthewff.logic.Problem
 import com.elsoft.whatthewff.ui.features.customproblems.ProblemListScreen
 import com.elsoft.whatthewff.ui.features.customproblems.ProblemSetBrowserScreen
 import com.elsoft.whatthewff.ui.features.game.GameModeScreen
+import com.elsoft.whatthewff.ui.features.help.HelpSystem
 import com.elsoft.whatthewff.ui.features.main.MainScreen
 import com.elsoft.whatthewff.ui.features.proof.ProofScreen
 import com.elsoft.whatthewff.ui.navigation.Screen
+import com.elsoft.whatthewff.ui.navigation.Screen.*
 import com.elsoft.whatthewff.ui.theme.WhatTheWFFTheme
 
 class MainActivity : ComponentActivity() {
@@ -36,43 +38,52 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var currentScreen by remember { mutableStateOf<Screen>(Screen.Main) }
-                    var previousScreen by remember { mutableStateOf<Screen>(Screen.Main) }
+                    var currentScreen by remember { mutableStateOf<Screen>(Main) }
+                    var previousScreen by remember { mutableStateOf<Screen>(Main) }
 
                     when (val screen = currentScreen) {
-                        is Screen.Main -> MainScreen(
+                        is Main -> MainScreen(
                             onPracticeClicked = {
-                                previousScreen = Screen.Main
-                                currentScreen = Screen.ProblemSetBrowser
+                                previousScreen = Main
+                                currentScreen = ProblemSetBrowser
                             },
                             onGameClicked = {
-                                previousScreen = Screen.Main
-                                currentScreen = Screen.GameModeSelect
+                                previousScreen = Main
+                                currentScreen = GameModeSelect
+                            },
+                            onHelpClicked = {
+                                previousScreen = Main
+                                currentScreen = Help
                             }
                         )
-                        is Screen.GameModeSelect -> GameModeScreen(
+                        is Help -> HelpSystem(
+                            onExit = {
+                                currentScreen = Main
+                            }
+                        )
+                        is GameModeSelect -> GameModeScreen(
                             onProblemGenerated = { problem ->
-                                previousScreen = Screen.GameModeSelect
-                                currentScreen = Screen.Proof(
+                                previousScreen = GameModeSelect
+                                currentScreen = Proof(
                                     problem, "Generated Problem",
                                     initialProof = null
                                 )
                             },
-                            onBackClicked = { currentScreen = Screen.Main }
+                            onBackClicked = { currentScreen = Main }
                         )
-                        is Screen.ProblemSetBrowser -> ProblemSetBrowserScreen(
-                            onBackPressed = { currentScreen = Screen.Main },
+                        is ProblemSetBrowser -> ProblemSetBrowserScreen(
+                            onBackPressed = { currentScreen = Main },
                             onProblemSetSelected = { setTitle ->
-                                previousScreen = Screen.ProblemSetBrowser
-                                currentScreen = Screen.ProblemList(setTitle)
+                                previousScreen = ProblemSetBrowser
+                                currentScreen = ProblemList(setTitle)
                             }
                         )
-                        is Screen.ProblemList -> ProblemListScreen(
+                        is ProblemList -> ProblemListScreen(
                             problemSetTitle = screen.setTitle,
-                            onBackPressed = { currentScreen = Screen.ProblemSetBrowser },
+                            onBackPressed = { currentScreen = ProblemSetBrowser },
                             onProblemSelected = { problem, problemSetTitle ->
-                                previousScreen = Screen.ProblemList(screen.setTitle)
-                                currentScreen = Screen.Proof(
+                                previousScreen = ProblemList(screen.setTitle)
+                                currentScreen = Proof(
                                     problem, problemSetTitle,
                                     initialProof = null
                                 )
@@ -87,12 +98,12 @@ class MainActivity : ComponentActivity() {
                                         conclusion = customProblem.conclusion,
                                         difficulty = 0
                                     )
-                                    previousScreen = Screen.ProblemList(screen.setTitle)
-                                    currentScreen = Screen.Proof(problem, setTitle, customProblem.solvedProof)
+                                    previousScreen = ProblemList(screen.setTitle)
+                                    currentScreen = Proof(problem, setTitle, customProblem.solvedProof)
                                 }
                             }
                         )
-                        is Screen.Proof -> ProofScreen(
+                        is Proof -> ProofScreen(
                             problem = screen.problem,
                             problemSetTitle = screen.setTitle,
                             initialProof = screen.initialProof,

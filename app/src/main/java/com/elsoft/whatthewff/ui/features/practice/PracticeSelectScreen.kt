@@ -3,6 +3,7 @@
 
 package com.elsoft.whatthewff.ui.features.practice
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,13 @@ fun PracticeSelectScreen(
     onProblemSelected: (Problem) -> Unit,
     onBackClicked: () -> Unit
 ) {
+    // Intercept the back gesture and call the onBackClicked lambda,
+    // which tells MainActivity to switch the state back to AppScreen.Main.
+    BackHandler {
+        // Prevent going back while a problem is being generated.
+        onBackClicked()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

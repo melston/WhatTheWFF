@@ -5,6 +5,7 @@ package com.elsoft.whatthewff.ui.features.game
 
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,6 +58,15 @@ fun GameModeScreen(
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    // Intercept the back gesture and call the onBackClicked lambda,
+    // which tells MainActivity to switch the state back to AppScreen.Main.
+    BackHandler {
+        // Prevent going back while a problem is being generated.
+        if (!isLoading) {
+            onBackClicked()
+        }
+    }
 
     Scaffold(
         topBar = {

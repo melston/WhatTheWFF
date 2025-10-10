@@ -6,6 +6,7 @@ package com.elsoft.whatthewff.ui.features.customproblems
 
 import android.content.ContentResolver
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -55,6 +56,11 @@ fun ProblemSetBrowserScreen(
         }
     )
 
+    BackHandler {
+        // Prevent going back while a problem is being generated.
+        onBackPressed()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -74,7 +80,9 @@ fun ProblemSetBrowserScreen(
     ) { padding ->
         if (problemSets.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Text("No problem sets imported yet.\nClick the '+' to add one.",
@@ -83,7 +91,9 @@ fun ProblemSetBrowserScreen(
                 )
             }
         } else {
-            LazyColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
+            LazyColumn(modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)) {
                 items(problemSets) { set ->
                     ProblemSetItem(
                         set = set,
